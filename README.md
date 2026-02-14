@@ -3,7 +3,7 @@ This is a project where we explore the use of RAG and Agentic AI in a domain of 
 # Estructura
 Agentic-Proyecto/
 
-#Entorno virtual
+# Entorno virtual
 python3 -m venv .venv
 .venv\Scripts\activate
 setup
