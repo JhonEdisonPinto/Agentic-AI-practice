@@ -120,16 +120,47 @@ def tool_calling_node(state: RAGState) -> RAGState:
                     pass
     
     # Si menciona un tipo específico de documento
-    doc_type_match = re.search(r'(ley|decreto|sentencia)\s+(\d+)', query, re.IGNORECASE)
+    # Patrón 1: LEY/DECRETO con número y año opcional
+    doc_type_match = re.search(r'(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
     if doc_type_match:
         doc_type = doc_type_match.group(1).upper()
         doc_num = doc_type_match.group(2)
-        print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num}")
+        doc_year = doc_type_match.group(3) if doc_type_match.group(3) else None
+        
+        if doc_year:
+            print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num} DE {doc_year}")
+        else:
+            print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num}")
+            
         tool_results = {
             "tool_used": "search_by_document_type",
             "doc_type": doc_type,
-            "doc_number": doc_num
+            "doc_number": doc_num,
+            "doc_year": doc_year
         }
+    
+    # Patrón 2: SENTENCIA (formato C-200, T-1234, etc.)
+    if not tool_results:
+        sentencia_match = re.search(r'sentencia\s+([CT])-?(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
+        if sentencia_match:
+            sentencia_prefix = sentencia_match.group(1).upper()
+            sentencia_num = sentencia_match.group(2)
+            doc_year = sentencia_match.group(3) if sentencia_match.group(3) else None
+            
+            # El número de sentencia incluye el prefijo: C200, T1234
+            doc_num = f"{sentencia_prefix}{sentencia_num}"
+            
+            if doc_year:
+                print(f"   ✓ Detectado: Búsqueda por sentencia específica - SENTENCIA_{doc_num}_{doc_year}")
+            else:
+                print(f"   ✓ Detectado: Búsqueda por sentencia específica - SENTENCIA_{doc_num}")
+            
+            tool_results = {
+                "tool_used": "search_by_document_type",
+                "doc_type": "SENTENCIA",
+                "doc_number": doc_num,
+                "doc_year": doc_year
+            }
     
     # Si menciona un rango de años
     year_match = re.findall(r'(19|20)\d{2}', query)
@@ -154,9 +185,11 @@ def tool_calling_node(state: RAGState) -> RAGState:
 def retrieve_node(state: RAGState) -> RAGState:
     """
     Recupera documentos relevantes de ChromaDB basándose en la consulta.
+    Usa filtros de metadata cuando se detecta un documento específico.
     """
     query = state["query"]
     classification = state.get("classification", "general")
+    tool_results = state.get("tool_results")
     
     print(f"\n📚 RECUPERANDO DOCUMENTOS")
     
@@ -171,8 +204,69 @@ def retrieve_node(state: RAGState) -> RAGState:
         # Determinar número de documentos a recuperar según clasificación
         k = 5 if classification == "legal_specific" else 3
         
-        # Búsqueda por similitud
-        docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
+        # Si tool_results detectó un documento específico, usar filtros de metadata
+        filter_dict = None
+        if tool_results and tool_results.get("tool_used") == "search_by_document_type":
+            doc_type = tool_results.get("doc_type")
+            doc_number = tool_results.get("doc_number")
+            doc_year = tool_results.get("doc_year")
+            
+            # Construir el ID del documento que buscamos
+            # Formato esperado en metadata: "LEY_1010_2006", "DECRETO_1072_2015", etc.
+            if doc_year:
+                target_id = f"{doc_type}_{doc_number}_{doc_year}"
+                print(f"   🎯 Búsqueda específica: {target_id}")
+            else:
+                target_id = f"{doc_type}_{doc_number}"
+                print(f"   🎯 Búsqueda específica (sin año): {target_id}")
+            
+            # Intentar búsqueda con filtro exacto
+            try:
+                # Estrategia 1: Búsqueda directa con ID completo
+                if doc_year:
+                    filter_dict = {"id_documento": {"$eq": target_id}}
+                    docs_with_scores = vectorstore.similarity_search_with_score(
+                        query, k=k, filter=filter_dict
+                    )
+                    
+                    if not docs_with_scores:
+                        print(f"   ⚠️ No encontrado con ID completo, probando solo tipo y número")
+                        # Estrategia 2: Buscar por tipo y número (sin año)
+                        filter_dict = {
+                            "$and": [
+                                {"tipo_documento": {"$eq": doc_type}},
+                                {"numero": {"$eq": doc_number}}
+                            ]
+                        }
+                        docs_with_scores = vectorstore.similarity_search_with_score(
+                            query, k=k, filter=filter_dict
+                        )
+                else:
+                    # Solo tenemos tipo y número, no año
+                    filter_dict = {
+                        "$and": [
+                            {"tipo_documento": {"$eq": doc_type}},
+                            {"numero": {"$eq": doc_number}}
+                        ]
+                    }
+                    docs_with_scores = vectorstore.similarity_search_with_score(
+                        query, k=k, filter=filter_dict
+                    )
+                
+                # Estrategia 3: Si aún no encontramos, buscar por tipo solamente
+                if not docs_with_scores:
+                    print(f"   ⚠️ No encontrado con número específico, buscando solo por tipo: {doc_type}")
+                    filter_dict = {"tipo_documento": {"$eq": doc_type}}
+                    docs_with_scores = vectorstore.similarity_search_with_score(
+                        query, k=k*2, filter=filter_dict  # Más documentos si solo filtramos por tipo
+                    )
+                    
+            except Exception as filter_error:
+                print(f"   ⚠️ Error con filtros, usando búsqueda general: {filter_error}")
+                docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
+        else:
+            # Búsqueda por similitud estándar
+            docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
         
         documents = [doc for doc, score in docs_with_scores]
         scores = [score for doc, score in docs_with_scores]
@@ -180,14 +274,18 @@ def retrieve_node(state: RAGState) -> RAGState:
         print(f"   ✓ {len(documents)} documentos recuperados")
         for i, (doc, score) in enumerate(zip(documents, scores), 1):
             doc_id = doc.metadata.get("id_documento", "N/A")
-            print(f"      {i}. {doc_id} (score: {score:.4f})")
+            tipo = doc.metadata.get("tipo_documento", "N/A")
+            print(f"      {i}. {doc_id} ({tipo}) - score: {score:.4f}")
         
         state["documents"] = documents
         state["metadata"]["retrieval_scores"] = scores
         state["metadata"]["num_retrieved"] = len(documents)
+        state["metadata"]["used_filter"] = filter_dict is not None
         
     except Exception as e:
         print(f"   ⚠️ Error en recuperación: {e}")
+        import traceback
+        traceback.print_exc()
         state["documents"] = []
         state["metadata"]["retrieval_error"] = str(e)
     
