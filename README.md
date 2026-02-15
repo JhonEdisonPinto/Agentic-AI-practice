@@ -303,15 +303,8 @@ Este proyecto está bajo la Licencia MIT. Ver archivo `LICENSE` para más detall
 
 ## 👤 Autor
 
-Tu Nombre - [@tu-usuario](https://github.com/tu-usuario)
-
-## 🙏 Agradecimientos
-
-- LangChain y LangGraph por el framework
-- ChromaDB por la base de datos vectorial
-- Sentence Transformers por los embeddings multilingües
-- Google y Groq por las APIs gratuitas de LLMs
-
----
+Jhon Edison Pinto - [@JhonEdisonPinto](https://github.com/JhonEdisonPinto)
+Juan Sebastian Hoyos Castillo - [@SebastianHoyoss](https://github.com/SebastianHoyoss)
+Jhogert David Bita Aldana - [@JhogertBita](https://github.com/JhogertBita)
 
 **⭐ Si este proyecto te fue útil, considera darle una estrella en GitHub ⭐**
