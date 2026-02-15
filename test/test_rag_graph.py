@@ -36,14 +36,18 @@ def test_rag_workflow():
         print(f"   ✗ Error al construir grafo: {e}")
         return
     
-    # Consultas de prueba diseñadas para activar las herramientas detectables automáticamente
-    # El grafo actual detecta automáticamente 3 de las 5 herramientas:
-    # ✓ calculate_prestaciones_sociales, search_by_document_type, search_by_year_range
-    # Las otras 2 (extract_specific_article, compare_documents) están disponibles 
-    # para invocación directa pero requieren integración adicional en el flujo
+    # Consultas de prueba diseñadas para activar las 5 herramientas
+    # Todas las herramientas ahora están integradas con detección automática:
+    # ✓ calculate_prestaciones_sociales
+    # ✓ search_by_document_type
+    # ✓ search_by_year_range
+    # ✓ extract_specific_article
+    # ✓ compare_documents
     
     test_queries = [
-
+        # Tool 1: calculate_prestaciones_sociales
+        # Activa cuando: clasificación="calculation" + palabras clave
+        "¿Cómo calculo las prestaciones sociales con un salario de $2,500,000?",
         
         # Tool 2: search_by_document_type (Ley)
         # Activa cuando: detecta patrón "ley/decreto/sentencia + número"
@@ -55,6 +59,14 @@ def test_rag_workflow():
         # Tool 3: search_by_year_range
         # Activa cuando: encuentra 2 o más años (19XX o 20XX)
         "¿Qué normativa sobre jornada laboral se publicó entre 2010 y 2020?",
+        
+        # Tool 4: extract_specific_article
+        # Activa cuando: detecta "artículo X de la ley/decreto Y"
+        "¿Qué dice el artículo 5 de la ley 1010?",
+        
+        # Tool 5: compare_documents
+        # Activa cuando: detecta "comparar/diferencia entre ley X y ley Y"
+        "¿Cuáles son las diferencias entre la ley 1010 y el decreto 1072?",
         
     ]
     
@@ -146,22 +158,24 @@ def test_rag_workflow():
     print("\n🎉 El LangGraph RAG está funcionando correctamente!")
     print("\n📊 Resultados de las pruebas:")
     print("   ✓ Pipeline de 5 nodos ejecutado exitosamente")
-    print("   ✓ Herramientas especializadas activadas automáticamente")
+    print("   ✓ Todas las herramientas especializadas integradas")
     print("   ✓ Recuperación de documentos desde ChromaDB funcionando")
     print("   ✓ Generación de respuestas y verificación operativas")
-    print("\n🔧 Herramientas con detección automática (probadas):")
+    print("\n🔧 Herramientas integradas (5/5) con detección automática:")
     print("   1. calculate_prestaciones_sociales ✓ - Cálculos de liquidación")
     print("   2. search_by_document_type ✓ - Filtrado por tipo de documento")
     print("   3. search_by_year_range ✓ - Búsqueda por rango de años")
-    print("\n🛠️ Herramientas adicionales disponibles:")
-    print("   4. extract_specific_article - Extracción de artículos específicos")
-    print("   5. compare_documents - Comparación entre documentos")
-    print("   (Requieren invocación explícita o integración en el flujo)")
+    print("   4. extract_specific_article ✓ - Extracción de artículos específicos")
+    print("   5. compare_documents ✓ - Comparación entre documentos")
+    print("\n💡 Características:")
+    print("   • Búsqueda por metadata para consultas específicas")
+    print("   • Detección automática de herramientas según el patrón de consulta")
+    print("   • Fallback inteligente cuando no encuentra resultados exactos")
+    print("   • Prompts adaptados según la herramienta ejecutada")
     print("\n💡 Próximos pasos:")
-    print("   1. Integrar herramientas 4 y 5 con detección automática")
-    print("   2. Conectar con interfaz Streamlit (app.py)")
-    print("   3. Indexar corpus completo (74 PDFs)")
-    print("   4. Optimizar prompts y parámetros de recuperación")
+    print("   1. Conectar con interfaz Streamlit (app.py)")
+    print("   2. Indexar corpus completo (74 PDFs)")
+    print("   3. Optimizar prompts y parámetros de recuperación")
     print("=" * 80)
 
 

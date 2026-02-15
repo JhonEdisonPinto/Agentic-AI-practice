@@ -92,6 +92,7 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
 def tool_calling_node(state: RAGState) -> RAGState:
     """
     Determina si se necesita ejecutar alguna herramienta especializada.
+    Detecta todos los casos y prepara los parámetros para ejecutar las herramientas.
     """
     query = state["query"]
     classification = state.get("classification", "general")
@@ -100,9 +101,8 @@ def tool_calling_node(state: RAGState) -> RAGState:
     
     tool_results = None
     
-    # Si es una consulta de cálculo, usar la calculadora
+    # 1. HERRAMIENTA: calculate_prestaciones_sociales
     if classification == "calculation":
-        # Detectar si es cálculo de prestaciones
         if any(word in query.lower() for word in ["prestaciones", "cesantías", "prima", "liquidación"]):
             print("   ✓ Detectado: Cálculo de prestaciones sociales")
             # Extraer valores si están en la consulta
@@ -113,31 +113,102 @@ def tool_calling_node(state: RAGState) -> RAGState:
                     tool_results = {
                         "tool_used": "calculate_prestaciones_sociales",
                         "requires_user_input": True,
-                        "message": "Necesito más información para el cálculo"
+                        "message": "Necesito más información para el cálculo",
+                        "salario_detectado": salario
                     }
                     print(f"      Salario detectado: ${salario:,.2f}")
                 except:
                     pass
     
-    # Si menciona un tipo específico de documento
-    # Patrón 1: LEY/DECRETO con número y año opcional
-    doc_type_match = re.search(r'(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
-    if doc_type_match:
-        doc_type = doc_type_match.group(1).upper()
-        doc_num = doc_type_match.group(2)
-        doc_year = doc_type_match.group(3) if doc_type_match.group(3) else None
-        
-        if doc_year:
-            print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num} DE {doc_year}")
-        else:
-            print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num}")
+    # 2. HERRAMIENTA: extract_specific_article
+    # Detectar consultas sobre artículos específicos (ej: "artículo 5 de la ley 1010")
+    if not tool_results:
+        article_match = re.search(
+            r'art[íi]culo\s+(\d+)\s+(?:de\s+)?(?:la\s+)?(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?',
+            query,
+            re.IGNORECASE
+        )
+        if article_match:
+            article_num = article_match.group(1)
+            doc_type = article_match.group(2).upper()
+            doc_num = article_match.group(3)
+            doc_year = article_match.group(4) if article_match.group(4) else None
             
-        tool_results = {
-            "tool_used": "search_by_document_type",
-            "doc_type": doc_type,
-            "doc_number": doc_num,
-            "doc_year": doc_year
-        }
+            # Construir ID del documento
+            if doc_year:
+                doc_id = f"{doc_type}_{doc_num}_{doc_year}"
+                print(f"   ✓ Detectado: Extracción de artículo {article_num} de {doc_id}")
+            else:
+                doc_id = f"{doc_type}_{doc_num}"
+                print(f"   ✓ Detectado: Extracción de artículo {article_num} de {doc_id} (sin año)")
+            
+            tool_results = {
+                "tool_used": "extract_specific_article",
+                "doc_id": doc_id,
+                "article_number": article_num,
+                "doc_type": doc_type,
+                "doc_number": doc_num,
+                "doc_year": doc_year
+            }
+    
+    # 3. HERRAMIENTA: compare_documents
+    # Detectar comparaciones entre documentos
+    if not tool_results:
+        compare_patterns = [
+            r'compar[ae]r?\s+(?:la\s+)?(ley|decreto)\s+(\d+).*(?:con|y|vs).*(?:la\s+)?(ley|decreto)\s+(\d+)',
+            r'diferencias?\s+entre\s+(?:la\s+)?(ley|decreto)\s+(\d+).*(?:y|con).*(?:la\s+)?(ley|decreto)\s+(\d+)'
+        ]
+        
+        for pattern in compare_patterns:
+            compare_match = re.search(pattern, query, re.IGNORECASE)
+            if compare_match:
+                doc1_type = compare_match.group(1).upper()
+                doc1_num = compare_match.group(2)
+                doc2_type = compare_match.group(3).upper()
+                doc2_num = compare_match.group(4)
+                
+                # Extraer tema de comparación (palabras clave)
+                topic_words = []
+                for word in query.lower().split():
+                    if word not in ['comparar', 'diferencia', 'entre', 'con', 'la', 'el', 'de', 'ley', 'decreto', 'y']:
+                        if not word.isdigit():
+                            topic_words.append(word)
+                topic = " ".join(topic_words[:3]) if topic_words else "contenido general"
+                
+                doc1_id = f"{doc1_type}_{doc1_num}"
+                doc2_id = f"{doc2_type}_{doc2_num}"
+                
+                print(f"   ✓ Detectado: Comparación entre {doc1_id} y {doc2_id}")
+                print(f"      Tema: {topic}")
+                
+                tool_results = {
+                    "tool_used": "compare_documents",
+                    "doc_id1": doc1_id,
+                    "doc_id2": doc2_id,
+                    "topic": topic
+                }
+                break
+    
+    # 4. HERRAMIENTA: search_by_document_type
+    # Patrón 1: LEY/DECRETO con número y año opcional
+    if not tool_results:
+        doc_type_match = re.search(r'(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
+        if doc_type_match:
+            doc_type = doc_type_match.group(1).upper()
+            doc_num = doc_type_match.group(2)
+            doc_year = doc_type_match.group(3) if doc_type_match.group(3) else None
+            
+            if doc_year:
+                print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num} DE {doc_year}")
+            else:
+                print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num}")
+                
+            tool_results = {
+                "tool_used": "search_by_document_type",
+                "doc_type": doc_type,
+                "doc_number": doc_num,
+                "doc_year": doc_year
+            }
     
     # Patrón 2: SENTENCIA (formato C-200, T-1234, etc.)
     if not tool_results:
@@ -162,16 +233,18 @@ def tool_calling_node(state: RAGState) -> RAGState:
                 "doc_year": doc_year
             }
     
-    # Si menciona un rango de años
-    year_match = re.findall(r'(19|20)\d{2}', query)
-    if len(year_match) >= 2:
-        years = sorted([int(y) for y in year_match])
-        print(f"   ✓ Detectado: Búsqueda por rango de años - {years[0]} a {years[-1]}")
-        tool_results = {
-            "tool_used": "search_by_year_range",
-            "start_year": years[0],
-            "end_year": years[-1]
-        }
+    # 5. HERRAMIENTA: search_by_year_range
+    # Detectar rango de años
+    if not tool_results:
+        year_match = re.findall(r'(19|20)\d{2}', query)
+        if len(year_match) >= 2:
+            years = sorted([int(y) for y in year_match])
+            print(f"   ✓ Detectado: Búsqueda por rango de años - {years[0]} a {years[-1]}")
+            tool_results = {
+                "tool_used": "search_by_year_range",
+                "start_year": years[0],
+                "end_year": years[-1]
+            }
     
     if tool_results:
         print(f"   ✓ Herramienta seleccionada: {tool_results.get('tool_used', 'N/A')}")
@@ -185,7 +258,8 @@ def tool_calling_node(state: RAGState) -> RAGState:
 def retrieve_node(state: RAGState) -> RAGState:
     """
     Recupera documentos relevantes de ChromaDB basándose en la consulta.
-    Usa filtros de metadata cuando se detecta un documento específico.
+    Ejecuta las herramientas especializadas cuando son necesarias.
+    Mantiene la búsqueda por metadata para consultas específicas.
     """
     query = state["query"]
     classification = state.get("classification", "general")
@@ -204,83 +278,200 @@ def retrieve_node(state: RAGState) -> RAGState:
         # Determinar número de documentos a recuperar según clasificación
         k = 5 if classification == "legal_specific" else 3
         
-        # Si tool_results detectó un documento específico, usar filtros de metadata
+        # EJECUTAR HERRAMIENTAS ESPECIALIZADAS
+        documents = []
         filter_dict = None
-        if tool_results and tool_results.get("tool_used") == "search_by_document_type":
-            doc_type = tool_results.get("doc_type")
-            doc_number = tool_results.get("doc_number")
-            doc_year = tool_results.get("doc_year")
+        
+        if tool_results:
+            tool_used = tool_results.get("tool_used")
             
-            # Construir el ID del documento que buscamos
-            # Formato esperado en metadata: "LEY_1010_2006", "DECRETO_1072_2015", etc.
-            if doc_year:
-                target_id = f"{doc_type}_{doc_number}_{doc_year}"
-                print(f"   🎯 Búsqueda específica: {target_id}")
-            else:
-                target_id = f"{doc_type}_{doc_number}"
-                print(f"   🎯 Búsqueda específica (sin año): {target_id}")
-            
-            # Intentar búsqueda con filtro exacto
-            try:
-                # Estrategia 1: Búsqueda directa con ID completo
-                if doc_year:
-                    filter_dict = {"id_documento": {"$eq": target_id}}
-                    docs_with_scores = vectorstore.similarity_search_with_score(
-                        query, k=k, filter=filter_dict
+            # 1. Ejecutar herramienta extract_specific_article
+            if tool_used == "extract_specific_article":
+                from src.tools import extract_specific_article
+                print(f"   🔧 Ejecutando: extract_specific_article")
+                
+                doc_id = tool_results.get("doc_id")
+                article_number = tool_results.get("article_number")
+                
+                # La herramienta devuelve el contenido del artículo
+                article_content = extract_specific_article.invoke({
+                    "doc_id": doc_id,
+                    "article_number": article_number,
+                    "vectorstore": vectorstore
+                })
+                
+                if article_content:
+                    # Crear documento con el artículo encontrado
+                    doc = Document(
+                        page_content=article_content,
+                        metadata={
+                            "id_documento": doc_id,
+                            "tipo_documento": tool_results.get("doc_type"),
+                            "articulo": article_number,
+                            "source": "extract_specific_article"
+                        }
                     )
-                    
-                    if not docs_with_scores:
-                        print(f"   ⚠️ No encontrado con ID completo, probando solo tipo y número")
-                        # Estrategia 2: Buscar por tipo y número (sin año)
+                    documents = [doc]
+                    print(f"      ✓ Artículo {article_number} extraído exitosamente")
+                else:
+                    print(f"      ⚠️ Artículo no encontrado, usando búsqueda por metadata")
+                    # Fallback: buscar con filtros de metadata
+                    filter_dict = {
+                        "$and": [
+                            {"id_documento": {"$eq": doc_id}},
+                        ]
+                    }
+            
+            # 2. Ejecutar herramienta compare_documents
+            elif tool_used == "compare_documents":
+                from src.tools import compare_documents
+                print(f"   🔧 Ejecutando: compare_documents")
+                
+                doc_id1 = tool_results.get("doc_id1")
+                doc_id2 = tool_results.get("doc_id2")
+                topic = tool_results.get("topic")
+                
+                comparison_result = compare_documents.invoke({
+                    "doc_id1": doc_id1,
+                    "doc_id2": doc_id2,
+                    "topic": topic,
+                    "vectorstore": vectorstore
+                })
+                
+                # Guardar resultado de comparación en tool_results para usarlo en generate
+                state["tool_results"]["comparison_result"] = comparison_result
+                print(f"      ✓ Comparación completada")
+                print(f"         Doc1: {comparison_result['documento1']['fragmentos_encontrados']} fragmentos")
+                print(f"         Doc2: {comparison_result['documento2']['fragmentos_encontrados']} fragmentos")
+                
+                # Buscar documentos de ambos para el contexto
+                filter_dict = {
+                    "$or": [
+                        {"id_documento": {"$eq": doc_id1}},
+                        {"id_documento": {"$eq": doc_id2}}
+                    ]
+                }
+            
+            # 3. Ejecutar herramienta search_by_year_range
+            elif tool_used == "search_by_year_range":
+                from src.tools import search_by_year_range
+                print(f"   🔧 Ejecutando: search_by_year_range")
+                
+                start_year = tool_results.get("start_year")
+                end_year = tool_results.get("end_year")
+                
+                # La herramienta ya hace la búsqueda y filtrado
+                documents = search_by_year_range.invoke({
+                    "query": query,
+                    "start_year": start_year,
+                    "end_year": end_year,
+                    "vectorstore": vectorstore
+                })
+                
+                print(f"      ✓ {len(documents)} documentos encontrados en rango {start_year}-{end_year}")
+            
+            # 4. Herramienta search_by_document_type - mantener búsqueda por metadata
+            elif tool_used == "search_by_document_type":
+                doc_type = tool_results.get("doc_type")
+                doc_number = tool_results.get("doc_number")
+                doc_year = tool_results.get("doc_year")
+                
+                print(f"   🎯 Búsqueda con metadata: {doc_type} {doc_number}")
+                
+                # Construir el ID del documento que buscamos
+                # Formato esperado en metadata: "LEY_1010_2006", "DECRETO_1072_2015", etc.
+                if doc_year:
+                    target_id = f"{doc_type}_{doc_number}_{doc_year}"
+                    print(f"      ID objetivo: {target_id}")
+                else:
+                    target_id = f"{doc_type}_{doc_number}"
+                    print(f"      ID objetivo (sin año): {target_id}")
+                
+                # Intentar búsqueda con filtro exacto - MANTENER LÓGICA ACTUAL
+                try:
+                    # Estrategia 1: Búsqueda directa con ID completo
+                    if doc_year:
+                        filter_dict = {"id_documento": {"$eq": target_id}}
+                    else:
+                        # Solo tenemos tipo y número, no año
                         filter_dict = {
                             "$and": [
                                 {"tipo_documento": {"$eq": doc_type}},
                                 {"numero": {"$eq": doc_number}}
                             ]
                         }
-                        docs_with_scores = vectorstore.similarity_search_with_score(
-                            query, k=k, filter=filter_dict
-                        )
-                else:
-                    # Solo tenemos tipo y número, no año
-                    filter_dict = {
-                        "$and": [
-                            {"tipo_documento": {"$eq": doc_type}},
-                            {"numero": {"$eq": doc_number}}
-                        ]
-                    }
+                except Exception as filter_error:
+                    print(f"      ⚠️ Error construyendo filtros: {filter_error}")
+                    filter_dict = None
+        
+        # EJECUTAR BÚSQUEDA si no se obtuvieron documentos de herramientas
+        if not documents:
+            try:
+                if filter_dict:
+                    # Búsqueda con filtros de metadata
                     docs_with_scores = vectorstore.similarity_search_with_score(
                         query, k=k, filter=filter_dict
                     )
-                
-                # Estrategia 3: Si aún no encontramos, buscar por tipo solamente
-                if not docs_with_scores:
-                    print(f"   ⚠️ No encontrado con número específico, buscando solo por tipo: {doc_type}")
-                    filter_dict = {"tipo_documento": {"$eq": doc_type}}
-                    docs_with_scores = vectorstore.similarity_search_with_score(
-                        query, k=k*2, filter=filter_dict  # Más documentos si solo filtramos por tipo
-                    )
                     
-            except Exception as filter_error:
-                print(f"   ⚠️ Error con filtros, usando búsqueda general: {filter_error}")
+                    # Si no encontramos con el filtro exacto, intentar estrategias alternativas
+                    if not docs_with_scores and tool_results:
+                        tool_used = tool_results.get("tool_used")
+                        
+                        if tool_used == "search_by_document_type":
+                            doc_type = tool_results.get("doc_type")
+                            doc_number = tool_results.get("doc_number")
+                            
+                            print(f"      ⚠️ Estrategia 2: Buscando solo por tipo y número")
+                            filter_dict = {
+                                "$and": [
+                                    {"tipo_documento": {"$eq": doc_type}},
+                                    {"numero": {"$eq": doc_number}}
+                                ]
+                            }
+                            docs_with_scores = vectorstore.similarity_search_with_score(
+                                query, k=k, filter=filter_dict
+                            )
+                            
+                            # Estrategia 3: Si aún no encontramos, buscar por tipo solamente
+                            if not docs_with_scores:
+                                print(f"      ⚠️ Estrategia 3: Buscando solo por tipo: {doc_type}")
+                                filter_dict = {"tipo_documento": {"$eq": doc_type}}
+                                docs_with_scores = vectorstore.similarity_search_with_score(
+                                    query, k=k*2, filter=filter_dict
+                                )
+                else:
+                    # Búsqueda por similitud estándar
+                    docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
+                
+                documents = [doc for doc, score in docs_with_scores]
+                scores = [score for doc, score in docs_with_scores]
+                
+            except Exception as search_error:
+                print(f"      ⚠️ Error en búsqueda con filtros: {search_error}")
+                # Fallback final: búsqueda sin filtros
                 docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
+                documents = [doc for doc, score in docs_with_scores]
+                scores = [score for doc, score in docs_with_scores]
         else:
-            # Búsqueda por similitud estándar
-            docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
+            # Ya tenemos documentos de una herramienta
+            scores = [0.0] * len(documents)  # No hay scores si vienen de herramienta
         
-        documents = [doc for doc, score in docs_with_scores]
-        scores = [score for doc, score in docs_with_scores]
-        
+        # LOGGING Y ACTUALIZACIÓN DEL ESTADO
         print(f"   ✓ {len(documents)} documentos recuperados")
         for i, (doc, score) in enumerate(zip(documents, scores), 1):
             doc_id = doc.metadata.get("id_documento", "N/A")
             tipo = doc.metadata.get("tipo_documento", "N/A")
-            print(f"      {i}. {doc_id} ({tipo}) - score: {score:.4f}")
+            if score > 0:
+                print(f"      {i}. {doc_id} ({tipo}) - score: {score:.4f}")
+            else:
+                print(f"      {i}. {doc_id} ({tipo}) - [herramienta]")
         
         state["documents"] = documents
         state["metadata"]["retrieval_scores"] = scores
         state["metadata"]["num_retrieved"] = len(documents)
         state["metadata"]["used_filter"] = filter_dict is not None
+        if tool_results:
+            state["metadata"]["tool_executed"] = tool_results.get("tool_used")
         
     except Exception as e:
         print(f"   ⚠️ Error en recuperación: {e}")
@@ -320,10 +511,77 @@ def generate_node(state: RAGState) -> RAGState:
         tool_info = ""
         tool_results = state.get("tool_results")
         if tool_results:
-            tool_info = f"\n\nHerramienta utilizada: {tool_results.get('tool_used', 'N/A')}\nResultados: {tool_results}\n"
+            tool_used = tool_results.get("tool_used", "N/A")
+            tool_info = f"\n\n{'='*60}\nHERRAMIENTA EJECUTADA: {tool_used}\n{'='*60}\n"
+            
+            # Agregar información específica según la herramienta
+            if tool_used == "compare_documents":
+                comparison = tool_results.get("comparison_result", {})
+                tool_info += f"\nComparación entre documentos:\n"
+                tool_info += f"- Documento 1: {comparison.get('documento1', {}).get('id', 'N/A')}\n"
+                tool_info += f"  Fragmentos encontrados: {comparison.get('documento1', {}).get('fragmentos_encontrados', 0)}\n"
+                tool_info += f"- Documento 2: {comparison.get('documento2', {}).get('id', 'N/A')}\n"
+                tool_info += f"  Fragmentos encontrados: {comparison.get('documento2', {}).get('fragmentos_encontrados', 0)}\n"
+                tool_info += f"- Tema de comparación: {comparison.get('tema_comparacion', 'N/A')}\n"
+            
+            elif tool_used == "extract_specific_article":
+                tool_info += f"\nArtículo específico extraído:\n"
+                tool_info += f"- Documento: {tool_results.get('doc_id', 'N/A')}\n"
+                tool_info += f"- Artículo número: {tool_results.get('article_number', 'N/A')}\n"
+            
+            elif tool_used == "calculate_prestaciones_sociales":
+                tool_info += f"\nCálculo de prestaciones sociales:\n"
+                if tool_results.get("requires_user_input"):
+                    tool_info += f"- {tool_results.get('message', 'Información incompleta')}\n"
+                    if tool_results.get('salario_detectado'):
+                        tool_info += f"- Salario detectado: ${tool_results.get('salario_detectado'):,.2f}\n"
+            
+            elif tool_used == "search_by_year_range":
+                tool_info += f"\nBúsqueda por rango de años:\n"
+                tool_info += f"- Desde: {tool_results.get('start_year', 'N/A')}\n"
+                tool_info += f"- Hasta: {tool_results.get('end_year', 'N/A')}\n"
+            
+            elif tool_used == "search_by_document_type":
+                doc_id_parts = [tool_results.get('doc_type', '')]
+                if tool_results.get('doc_number'):
+                    doc_id_parts.append(tool_results.get('doc_number'))
+                if tool_results.get('doc_year'):
+                    doc_id_parts.append(tool_results.get('doc_year'))
+                tool_info += f"\nBúsqueda de documento específico:\n"
+                tool_info += f"- ID: {'_'.join(doc_id_parts)}\n"
+            
+            tool_info += f"{'='*60}\n"
         
-        # Prompt mejorado según clasificación
-        system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
+        # Prompt mejorado según clasificación y herramientas
+        if tool_results and tool_results.get("tool_used") == "compare_documents":
+            system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
+
+Reglas:
+1. Estás haciendo una COMPARACIÓN entre documentos legales - enfoca tu respuesta en similitudes y diferencias
+2. Cita ambos documentos de manera específica
+3. Si la información no está en el contexto, di que no tienes esa información
+4. Sé claro, preciso y profesional en tu análisis comparativo
+5. Usa lenguaje accesible para el usuario"""
+        elif tool_results and tool_results.get("tool_used") == "extract_specific_article":
+            system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
+
+Reglas:
+1. Estás extrayendo un ARTÍCULO ESPECÍFICO - proporciona su contenido completo
+2. Explica brevemente qué establece este artículo
+3. Cita el documento legal con precisión
+4. Sé claro, preciso y profesional
+5. Usa lenguaje accesible para el usuario"""
+        elif tool_results and tool_results.get("tool_used") == "calculate_prestaciones_sociales":
+            system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
+
+Reglas:
+1. Estás ayudando con un CÁLCULO de prestaciones sociales
+2. Cita las leyes y fórmulas relevantes del contexto
+3. Si falta información para el cálculo, indícalo claramente
+4. Sé claro, preciso y profesional
+5. Usa lenguaje accesible para el usuario"""
+        else:
+            system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
 
 Reglas:
 1. Responde SOLO con información del contexto
