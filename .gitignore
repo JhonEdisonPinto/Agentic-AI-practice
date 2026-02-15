@@ -1,0 +1,76 @@
+# Archivos de entorno (IMPORTANTE: contienen API keys sensibles)
+.env
+.env.local
+.env.*.local
+
+# Archivos de ChromaDB (base de datos local)
+data/
+chroma/
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Logs
+*.log
+
+# Modelos descargados (si los guardas localmente)
+models/
+*.bin
+*.onnx
+*.safetensors
+
+# Archivos temporales
+*.tmp
+*.bak
+tmp/
+
+# Secrets y credenciales
+secrets/
+credentials/
+*.pem
+*.key

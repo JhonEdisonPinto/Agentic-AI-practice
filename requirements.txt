@@ -9,3 +9,7 @@ langgraph
 chromadb
 python-dotenv
 langsmith
+sentence-transformers
+langchain-huggingface
+pypdf
+unstructured[pdf]
