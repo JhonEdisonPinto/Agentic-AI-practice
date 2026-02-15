@@ -303,8 +303,8 @@ Este proyecto está bajo la Licencia MIT. Ver archivo `LICENSE` para más detall
 
 ## 👤 Autor
 
-Jhon Edison Pinto - [@JhonEdisonPinto](https://github.com/JhonEdisonPinto)
-Juan Sebastian Hoyos Castillo - [@SebastianHoyoss](https://github.com/SebastianHoyoss)
-Jhogert David Bita Aldana - [@JhogertBita](https://github.com/JhogertBita)
+- Jhon Edison Pinto - [@JhonEdisonPinto](https://github.com/JhonEdisonPinto)
+- Juan Sebastian Hoyos Castillo - [@SebastianHoyoss](https://github.com/SebastianHoyoss)
+- Jhogert David Bita Aldana - [@JhogertBita](https://github.com/JhogertBita)
 
 **⭐ Si este proyecto te fue útil, considera darle una estrella en GitHub ⭐**

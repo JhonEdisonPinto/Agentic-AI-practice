@@ -5,13 +5,13 @@ from dotenv import load_dotenv
 
 
 def load_settings() -> None:
-    # Load environment variables from .env if present.
-    # override=True ensures .env values take precedence over system env vars
+    # Carga todo del archivo .env si está presente.
+    # override=True Asegura que no haya problemas del .env por valores dentro del sistema.
     load_dotenv(override=True)
 
 
 def init_gemini_llm():
-    # Gemini 2.5 Flash for classification and verification.
+    # Gemini 2.5 Flash Para clasificar y validar.
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     return ChatGoogleGenerativeAI(
