@@ -40,6 +40,7 @@ def classify_node(state: RAGState) -> RAGState:
     - procedural: Pregunta sobre procedimientos o trámites
     - general: Pregunta general sobre derechos laborales
     - calculation: Pregunta que requiere cálculos
+    - resume: Pregunta que requiere un resumen de un documento
     """
     query = state["query"]
     
@@ -53,6 +54,7 @@ def classify_node(state: RAGState) -> RAGState:
 2. procedural: Pregunta sobre procedimientos, trámites o pasos a seguir
 3. general: Pregunta general sobre derechos, obligaciones o conceptos laborales
 4. calculation: Pregunta que requiere cálculos (liquidaciones, pagos, etc.)
+5. resume: Pregunta que requiere un resumen de un documento específico
 
 Consulta: "{query}"
 
@@ -63,7 +65,7 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
         classification = response.content.strip().lower()
         
         # Validar clasificación
-        valid_classifications = ["legal_specific", "procedural", "general", "calculation"]
+        valid_classifications = ["legal_specific", "procedural", "general", "calculation", "resume"]
         if classification not in valid_classifications:
             classification = "general"
         
@@ -75,6 +77,8 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
         query_lower = query.lower()
         if any(word in query_lower for word in ["calcular", "liquidar", "cuánto", "pagar"]):
             classification = "calculation"
+        elif any(word in query_lower for word in ["resumen", "resume", "resumir"]):
+            classification = "resume"
         elif any(word in query_lower for word in ["ley", "decreto", "artículo", "sentencia"]):
             classification = "legal_specific"
         elif any(word in query_lower for word in ["cómo", "procedimiento", "trámite", "pasos"]):
@@ -101,8 +105,77 @@ def tool_calling_node(state: RAGState) -> RAGState:
     
     tool_results = None
     
+    # 0. HERRAMIENTA: resume_document (PRIORIDAD: Detectar primero para evitar confusiones)
+    # Detectar consultas que requieren resumen de documento
+    if classification == "resume":
+        doc_type = None
+        doc_number = None
+        doc_year = None
+        doc_id = None
+        
+        # Patrón 1: Sentencias (C-1234, T-1234, SU-1234, etc.)
+        sentencia_match = re.search(r'resumen\s+(?:de\s+)?(?:la\s+)?sentencia\s+([CT])-?(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
+        if sentencia_match:
+            sentencia_prefix = sentencia_match.group(1).upper()
+            sentencia_num = sentencia_match.group(2)
+            doc_year = sentencia_match.group(3) if sentencia_match.group(3) else None
+            
+            doc_type = "SENTENCIA"
+            doc_number = f"{sentencia_prefix}{sentencia_num}"
+            
+            if doc_year:
+                doc_id = f"SENTENCIA_{doc_number}_{doc_year}"
+            else:
+                doc_id = f"SENTENCIA_{doc_number}"
+            
+            print(f"   ✓ Detectado: Resumen de sentencia - {doc_id}")
+        
+        # Patrón 2: LEY/DECRETO (ej: "resumen de la ley 1010" o "resumen del decreto 36 de 2016")
+        if not doc_id:
+            doc_pattern = re.search(r'resumen\s+(?:de\s+)?(?:(?:la|del)\s+)?(ley|decreto|acto legislativo)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
+            if doc_pattern:
+                doc_type = doc_pattern.group(1).upper()
+                doc_number = doc_pattern.group(2)
+                doc_year = doc_pattern.group(3) if doc_pattern.group(3) else None
+                
+                if doc_year:
+                    doc_id = f"{doc_type}_{doc_number}_{doc_year}"
+                else:
+                    doc_id = f"{doc_type}_{doc_number}"
+                
+                print(f"   ✓ Detectado: Resumen de documento - {doc_id}")
+        
+        # Patrón 3: Estructura inversa (ej: "ley 1010 resumen" o "decreto 36 de 2016 resumen")
+        if not doc_id:
+            inverse_pattern = re.search(r'(ley|decreto|sentencia|acto legislativo)\s+([CT])?-?(\d+)(?:\s+de\s+(\d{4}))?.*resumen', query, re.IGNORECASE)
+            if inverse_pattern:
+                if inverse_pattern.group(2):  # Es una sentencia
+                    doc_type = "SENTENCIA"
+                    doc_number = f"{inverse_pattern.group(2).upper()}{inverse_pattern.group(3)}"
+                    doc_year = inverse_pattern.group(4) if inverse_pattern.group(4) else None
+                else:  # Es un LEY/DECRETO
+                    doc_type = inverse_pattern.group(1).upper()
+                    doc_number = inverse_pattern.group(3)
+                    doc_year = inverse_pattern.group(4) if inverse_pattern.group(4) else None
+                
+                if doc_year:
+                    doc_id = f"{doc_type}_{doc_number}_{doc_year}"
+                else:
+                    doc_id = f"{doc_type}_{doc_number}"
+                
+                print(f"   ✓ Detectado: Resumen de documento - {doc_id}")
+        
+        if doc_id:
+            tool_results = {
+                "tool_used": "resume_document",
+                "doc_id": doc_id,
+                "doc_type": doc_type,
+                "doc_number": doc_number,
+                "doc_year": doc_year
+            }
+    
     # 1. HERRAMIENTA: calculate_prestaciones_sociales
-    if classification == "calculation":
+    if not tool_results and classification == "calculation":
         if any(word in query.lower() for word in ["prestaciones", "cesantías", "prima", "liquidación"]):
             print("   ✓ Detectado: Cálculo de prestaciones sociales")
             # Extraer valores si están en la consulta
@@ -122,7 +195,7 @@ def tool_calling_node(state: RAGState) -> RAGState:
     
     # 2. HERRAMIENTA: extract_specific_article
     # Detectar consultas sobre artículos específicos (ej: "artículo 5 de la ley 1010")
-    if not tool_results:
+    if not tool_results and classification != "resume":
         article_match = re.search(
             r'art[íi]culo\s+(\d+)\s+(?:de\s+)?(?:la\s+)?(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?',
             query,
@@ -191,7 +264,7 @@ def tool_calling_node(state: RAGState) -> RAGState:
     
     # 4. HERRAMIENTA: search_by_document_type
     # Patrón 1: LEY/DECRETO con número y año opcional
-    if not tool_results:
+    if not tool_results and classification != "resume":
         doc_type_match = re.search(r'(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
         if doc_type_match:
             doc_type = doc_type_match.group(1).upper()
@@ -235,7 +308,7 @@ def tool_calling_node(state: RAGState) -> RAGState:
     
     # 5. HERRAMIENTA: search_by_year_range
     # Detectar rango de años
-    if not tool_results:
+    if not tool_results and classification != "resume":
         year_match = re.findall(r'(19|20)\d{2}', query)
         if len(year_match) >= 2:
             years = sorted([int(y) for y in year_match])
@@ -370,7 +443,43 @@ def retrieve_node(state: RAGState) -> RAGState:
                 
                 print(f"      ✓ {len(documents)} documentos encontrados en rango {start_year}-{end_year}")
             
-            # 4. Herramienta search_by_document_type - mantener búsqueda por metadata
+            # 4. Ejecutar herramienta resume_document
+            elif tool_used == "resume_document":
+                from src.tools import resume_document
+                print(f"   🔧 Ejecutando: resume_document")
+                
+                doc_id = tool_results.get("doc_id")
+                
+                # La herramienta devuelve un diccionario con información del documento
+                resume_result = resume_document.invoke({
+                    "doc_id": doc_id,
+                    "vectorstore": vectorstore
+                })
+                
+                # Guardar resultado del resumen en tool_results para usarlo en generate
+                state["tool_results"]["resume_result"] = resume_result
+                print(f"      ✓ Contenido del documento recuperado")
+                print(f"         Título: {resume_result.get('titulo', 'Sin título')}")
+                print(f"         Fragmentos encontrados: {resume_result.get('fragmentos_encontrados', 0)}")
+                
+                # Crear documento con el CONTENIDO COMPLETO para que el LLM lo resuma
+                doc = Document(
+                    page_content=resume_result.get("contenido_completo", "No se encontró información disponible"),
+                    metadata={
+                        "id_documento": doc_id,
+                        "titulo": resume_result.get("titulo"),
+                        "tipo_documento": resume_result.get("tipo_documento"),
+                        "año": resume_result.get("año"),
+                        "source": "resume_document",
+                        "fragmentos_encontrados": resume_result.get("fragmentos_encontrados", 0)
+                    }
+                )
+                documents = [doc]
+                
+                if resume_result.get("fragmentos_encontrados", 0) == 0:
+                    print(f"      ⚠️ No se encontraron fragmentos en la base de datos para este documento")
+            
+            # 5. Herramienta search_by_document_type - mantener búsqueda por metadata
             elif tool_used == "search_by_document_type":
                 doc_type = tool_results.get("doc_type")
                 doc_number = tool_results.get("doc_number")
@@ -541,6 +650,15 @@ def generate_node(state: RAGState) -> RAGState:
                 tool_info += f"- Desde: {tool_results.get('start_year', 'N/A')}\n"
                 tool_info += f"- Hasta: {tool_results.get('end_year', 'N/A')}\n"
             
+            elif tool_used == "resume_document":
+                resume_data = tool_results.get("resume_result", {})
+                tool_info += f"\nResumen de documento:\n"
+                tool_info += f"- Documento: {tool_results.get('doc_id', 'N/A')}\n"
+                tool_info += f"- Título: {resume_data.get('titulo', 'Sin título')}\n"
+                tool_info += f"- Tipo: {resume_data.get('tipo_documento', 'Desconocido')}\n"
+                tool_info += f"- Año: {resume_data.get('año', 'No especificado')}\n"
+                tool_info += f"- Fragmentos encontrados: {resume_data.get('fragmentos_encontrados', 0)}\n"
+            
             elif tool_used == "search_by_document_type":
                 doc_id_parts = [tool_results.get('doc_type', '')]
                 if tool_results.get('doc_number'):
@@ -580,6 +698,24 @@ Reglas:
 3. Si falta información para el cálculo, indícalo claramente
 4. Sé claro, preciso y profesional
 5. Usa lenguaje accesible para el usuario"""
+        elif tool_results and tool_results.get("tool_used") == "resume_document":
+            system_prompt = """Eres un experto en derecho laboral colombiano. Tu tarea es generar un resumen DETALLADO y COMPLETO de un documento legal.
+
+INSTRUCCIONES CRÍTICAS PARA EL RESUMEN:
+1. Lee TODO el contenido del documento proporcionado
+2. EXTRAE los puntos clave y principales del documento
+3. Organiza el resumen en secciones lógicas con subtítulos
+4. INCLUYE:
+   - Objetivo o propósito del documento
+   - Contenido principal y disposiciones clave
+   - Artículos o secciones significativas
+   - Obligaciones o derechos establecidos
+   - Vigencia y fechas relevantes
+   - Cualquier excepción o aclaración importante
+5. Usa un estilo profesional pero accesible
+6. El resumen debe ser ÚTIL y INFORMATIVO para alguien que necesita entender rápidamente qué dice el documento
+7. NO escribas frases genéricas como "el documento proporciona información" - SÉ ESPECÍFICO
+8. Cita artículos o números de sección cuando sea relevante"""
         else:
             system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
 
@@ -590,7 +726,34 @@ Reglas:
 4. Sé claro, preciso y profesional
 5. Usa lenguaje accesible para el usuario"""
 
-        user_prompt = f"""Contexto de normativa laboral colombiana:
+        # Crear prompts específicos según el tipo de herramienta
+        if tool_results and tool_results.get("tool_used") == "resume_document":
+            user_prompt = f"""A continuación se proporciona el contenido COMPLETO de un documento legal.
+
+TAREA: Realiza un resumen DETALLADO y ORGANIZADO del documento.
+
+Estado del documento:
+- Tipo: {tool_results.get('doc_type', 'N/A')}
+- Número: {tool_results.get('doc_number', 'N/A')}
+- Año: {tool_results.get('doc_year', 'N/A') if tool_results.get('doc_year') else 'N/A'}
+
+---CONTENIDO DEL DOCUMENTO---
+
+{context}
+
+---FIN DEL CONTENIDO---
+
+Genera un resumen COMPLETO que incluya:
+✓ Objetivo y propósito del documento
+✓ Puntos clave y disposiciones principales
+✓ Contenido detallado de las secciones importantes
+✓ Derechos u obligaciones establecidas
+✓ Vigencia y aplicabilidad
+✓ Información adicional relevante
+
+Recuerda: Sé ESPECÍFICO. No escribas frases genéricas. Usa la información real del documento."""
+        else:
+            user_prompt = f"""Contexto de normativa laboral colombiana:
 
 {context}{tool_info}
 

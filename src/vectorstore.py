@@ -1,4 +1,5 @@
 from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 
 def create_chroma_index(persist_dir: str, embedding_fn, collection_name: str):

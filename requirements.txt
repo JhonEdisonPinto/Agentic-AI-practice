@@ -11,5 +11,6 @@ python-dotenv
 langsmith
 sentence-transformers
 langchain-huggingface
+langchain-chroma
 pypdf
 unstructured[pdf]

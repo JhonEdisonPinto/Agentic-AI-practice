@@ -189,6 +189,99 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
     return comparison
 
 
+@tool
+def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
+    """
+    Resume el contenido de un documento específico.
+    
+    Args:
+        doc_id: ID del documento (ej: "LEY_1010_2006" o "DECRETO_36_2016")
+        vectorstore: Vectorstore de ChromaDB
+        
+    Returns:
+        Diccionario con el contenido completo del documento y metadatos para que el LLM lo resuma
+    """
+    results = []
+    
+    # Estrategia 1: Búsqueda por ID exacto
+    try:
+        # Buscar todos los documentos del ID
+        all_docs = vectorstore.similarity_search("documento ley decreto sentencia normativa legal", k=100)
+        results = [
+            doc for doc in all_docs 
+            if doc.metadata.get("id_documento", "") == doc_id
+        ]
+    except Exception as e:
+        pass
+    
+    # Estrategia 2: Por tipo y número si no encontramos el ID exacto
+    if not results:
+        try:
+            parts = doc_id.split("_")
+            if len(parts) >= 2:
+                doc_type = parts[0]
+                doc_number = parts[1]
+                
+                all_docs = vectorstore.similarity_search("documento ley decreto sentencia normativa", k=150)
+                results = [
+                    doc for doc in all_docs 
+                    if doc.metadata.get("tipo_documento", "") == doc_type and
+                       str(doc.metadata.get("numero", "")) == doc_number
+                ]
+        except Exception as e:
+            pass
+    
+    # Estrategia 3: Con query descriptiva
+    if not results:
+        try:
+            parts = doc_id.split("_")
+            if len(parts) >= 2:
+                doc_type = parts[0].lower()
+                doc_number = parts[1]
+                query = f"{doc_type} número {doc_number}"
+                
+                docs_with_scores = vectorstore.similarity_search_with_score(query, k=100)
+                results = [doc for doc, score in docs_with_scores]
+                results = [
+                    doc for doc in results 
+                    if str(doc.metadata.get("numero", "")) == doc_number and
+                       doc.metadata.get("tipo_documento", "") == parts[0]
+                ]
+        except Exception as e:
+            pass
+    
+    if not results:
+        return {
+            "id_documento": doc_id,
+            "titulo": "Documento no encontrado",
+            "tipo_documento": "Desconocido",
+            "año": "No especificado",
+            "contenido_completo": f"No se encontraron fragmentos para el documento {doc_id}",
+            "fragmentos_principales": [],
+            "fragmentos_encontrados": 0,
+            "metadatos": {}
+        }
+    
+    # Compilar TODOS los fragmentos (sin truncar)
+    metadatos = results[0].metadata if results else {}
+    
+    # Juntar todo el contenido disponible
+    fragmentos_ordenados = [doc.page_content for doc in results]
+    contenido_completo = "\n\n---\n\n".join(fragmentos_ordenados)
+    
+    # Devolver el contenido completo para que el LLM lo resuma
+    return {
+        "id_documento": doc_id,
+        "titulo": metadatos.get("titulo", f"{metadatos.get('tipo_documento', 'Documento')} {metadatos.get('numero', '')}"),
+        "tipo_documento": metadatos.get("tipo_documento", "Desconocido"),
+        "año": metadatos.get("año", "No especificado"),
+        "contenido_completo": contenido_completo,  # Contenido sin truncar
+        "fragmentos_principales": fragmentos_ordenados[:10],  # Primeros 10 fragmentos
+        "fragmentos_encontrados": len(results),
+        "metadatos": metadatos
+    }
+
+
 # Diccionario de tools para fácil acceso
 AVAILABLE_TOOLS = {
     "search_by_document_type": search_by_document_type,
@@ -196,6 +289,7 @@ AVAILABLE_TOOLS = {
     "calculate_prestaciones_sociales": calculate_prestaciones_sociales,
     "extract_specific_article": extract_specific_article,
     "compare_documents": compare_documents,
+    "resume_document": resume_document,
 }
 
 
@@ -220,4 +314,7 @@ Herramientas disponibles:
    
 5. compare_documents(doc_id1, doc_id2, topic, vectorstore)
    - Compara dos documentos sobre un tema
+
+6. resume_document(doc_id, vectorstore)
+   - Resume el contenido de un documento específico
 """
