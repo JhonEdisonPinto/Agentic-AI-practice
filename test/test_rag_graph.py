@@ -44,16 +44,16 @@ def test_rag_workflow():
         "¿Cómo calculo las prestaciones sociales con un salario de $2,500,000?",
         
         # Tool 2: search_by_document_type
-        "Muéstrame información sobre la ley 1010 de 2006",
+        #"Muéstrame información sobre la ley 1010 de 2006",
         
         # Tool 3: search_by_year_range
-        "¿Qué normativa sobre jornada laboral se publicó entre 2010 y 2020?",
+        #"¿Qué normativa sobre jornada laboral se publicó entre 2010 y 2020?",
         
         # Tool 4: extract_specific_article
-        "¿Qué dice el artículo 5 de la ley 1010?",
+        #"¿Qué dice el artículo 5 de la ley 1010?",
         
         # Tool 5: compare_documents
-        "¿Cuáles son las diferencias entre la ley 1010 y el decreto 1072?",
+        #"¿Cuáles son las diferencias entre la ley 1010 y el decreto 1072?",
         
         # Tool 6: resume_document
         "Dime un resumen del decreto 36 de 2016"

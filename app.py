@@ -5,6 +5,7 @@ Sistema de consulta inteligente con LangGraph y ChromaDB.
 import streamlit as st
 import time
 from typing import Dict, Any
+from pathlib import Path
 
 from src.config import load_settings
 from src.graph import build_graph
@@ -19,8 +20,33 @@ st.set_page_config(
 )
 
 
+def check_database():
+    """Verifica si existe la base de datos ChromaDB."""
+    chroma_dir = Path("./data/chroma")
+    return chroma_dir.exists() and any(chroma_dir.glob("*"))
+
+
 def initialize_session_state():
     """Inicializa el estado de la sesión."""
+    # Verificar base de datos
+    if not check_database():
+        st.error("❌ Base de datos no encontrada")
+        st.info("""
+        **Para desplegar correctamente:**
+        
+        1. **Opción Simple**: Sube la carpeta `data/` al repositorio
+           ```bash
+           # Descomenta en .gitignore las líneas de data/
+           git add data/
+           git commit -m "Add database for deployment"
+           git push
+           ```
+        
+        2. **Opción Avanzada**: Los PDFs deben estar en `src/corpus/` 
+           y se generará automáticamente
+        """)
+        st.stop()
+    
     if "graph" not in st.session_state:
         with st.spinner("🔨 Construyendo grafo RAG..."):
             st.session_state.graph = build_graph()
@@ -30,22 +56,11 @@ def initialize_session_state():
 
 
 def display_sidebar():
-    """Muestra la barra lateral con información y ejemplos."""
+    """Muestra la barra lateral con información."""
     with st.sidebar:
         st.title("⚖️ RAG Laboral")
-        st.markdown("---")
         
-        st.subheader("📚 Sobre este sistema")
-        st.markdown("""
-        Sistema RAG (Retrieval-Augmented Generation) especializado en 
-        normativa laboral colombiana.
-        
-        **Corpus**: 74 documentos legales
-        - 22 Leyes
-        - 21 Decretos  
-        - 31 Sentencias
-        """)
-        
+
         st.markdown("---")
         st.subheader("🔧 Herramientas disponibles")
         st.markdown("""
@@ -56,22 +71,6 @@ def display_sidebar():
         5. **Comparación de documentos**
         6. **Resumen de documentos**
         """)
-        
-        st.markdown("---")
-        st.subheader("💡 Ejemplos de consultas")
-        
-        examples = {
-            "Cálculo": "¿Cómo calculo las prestaciones sociales con un salario de $2,500,000?",
-            "Documento específico": "Muéstrame información sobre la ley 1010 de 2006",
-            "Rango de años": "¿Qué normativa sobre jornada laboral se publicó entre 2010 y 2020?",
-            "Artículo específico": "¿Qué dice el artículo 5 de la ley 1010?",
-            "Comparación": "¿Cuáles son las diferencias entre la ley 1010 y el decreto 1072?",
-            "Resumen": "Dime un resumen del decreto 36 de 2016"
-        }
-        
-        for category, example in examples.items():
-            if st.button(f"📝 {category}", key=f"example_{category}", use_container_width=True):
-                st.session_state.example_query = example
 
 
 def display_response(result: Dict[str, Any]):
@@ -181,93 +180,135 @@ def main():
     
     st.markdown("---")
     
-    # Check for example query from sidebar
-    if "example_query" in st.session_state:
-        query = st.session_state.example_query
-        del st.session_state.example_query
-    else:
-        query = ""
+    # Crear pestañas
+    tab1, tab2 = st.tabs(["📖 Información del Sistema", "💬 Chat"])
     
-    # Input de consulta
-    user_query = st.text_area(
-        "💬 Escribe tu consulta:",
-        value=query,
-        height=100,
-        placeholder="Ejemplo: ¿Qué dice la ley 1010 sobre acoso laboral?",
-        key="query_input"
-    )
-    
-    col1, col2, col3 = st.columns([1, 1, 4])
-    with col1:
-        submit = st.button("🚀 Consultar", type="primary", use_container_width=True)
-    with col2:
-        clear = st.button("🗑️ Limpiar", use_container_width=True)
-    
-    if clear:
-        st.rerun()
-    
-    # Procesar consulta
-    if submit and user_query.strip():
-        try:
-            # Mostrar progreso
-            with st.status("🔄 Procesando consulta...", expanded=True) as status:
-                st.write("🔍 Clasificando consulta...")
-                time.sleep(0.5)
-                
-                st.write("🔧 Evaluando herramientas...")
-                time.sleep(0.5)
-                
-                st.write("📚 Recuperando documentos...")
-                time.sleep(0.5)
-                
-                # Ejecutar el grafo
-                initial_state = {
-                    "query": user_query,
-                    "classification": "",
-                    "documents": [],
-                    "tool_results": None,
-                    "answer": "",
-                    "verification": {},
-                    "metadata": {}
-                }
-                
-                result = st.session_state.graph.invoke(initial_state)
-                
-                st.write("✍️ Generando respuesta...")
-                time.sleep(0.5)
-                
-                st.write("✅ Verificando calidad...")
-                time.sleep(0.5)
-                
-                status.update(label="✅ Consulta procesada exitosamente", state="complete")
-            
-            st.markdown("---")
-            
-            # Mostrar resultados
-            display_response(result)
-            
-            # Agregar al historial
-            st.session_state.history.append({
-                "query": user_query,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "classification": result.get("classification"),
-                "quality": result.get("verification", {}).get("quality_level")
-            })
-            
-        except Exception as e:
-            st.error(f"❌ Error al procesar la consulta: {str(e)}")
-            st.exception(e)
-    
-    elif submit and not user_query.strip():
-        st.warning("⚠️ Por favor, escribe una consulta antes de enviar.")
-    
-    # Mostrar historial si existe
-    if st.session_state.history:
+    # Pestaña 1: Información del Sistema
+    with tab1:
+        st.header("📊 Información del RAG")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Documentos", "74")
+            st.metric("Leyes", "22")
+        
+        with col2:
+            st.metric("Decretos", "21")
+            st.metric("Sentencias", "31")
+        
+        
         st.markdown("---")
-        with st.expander("📜 Historial de consultas"):
-            for i, item in enumerate(reversed(st.session_state.history[-5:]), 1):
-                st.write(f"**{i}.** {item['query']}")
-                st.write(f"   └─ {item['timestamp']} | {item['classification']} | {item['quality']}")
+        
+        st.subheader("📚 Cobertura del Corpus")
+        st.markdown("""
+        El sistema contiene documentos sobre:
+        
+        - **Acoso Laboral**: Ley 1010 de 2006 y normativa relacionada
+        - **Jornada Laboral**: Regulaciones sobre horarios y descansos
+        - **Prestaciones Sociales**: Cálculos y normativa de prestaciones
+        - **Contratación**: Tipos de contratos y condiciones
+        - **Seguridad Social**: Obligaciones y afiliaciones
+        - **Riesgos Laborales**: Prevención y compensación
+        - **Teletrabajo**: Decreto 1072 y regulaciones
+        """)
+        
+        st.markdown("---")
+        
+        st.subheader("🔧 Capacidades del Sistema")
+        st.markdown("""
+        1. **Consultas sobre documentos específicos**
+        2. **Búsqueda por tipo de documento**
+        3. **Búsqueda temporal (años)**
+        4. **Extracción de artículos**
+        5. **Comparación entre documentos**
+        6. **Cálculo de prestaciones sociales**
+        7. **Resúmenes de documentos**
+        """)
+    
+    # Pestaña 2: Chat
+    with tab2:
+        st.header("💬 Consulta el RAG")
+        
+        # Input de consulta
+        user_query = st.text_area(
+            "✍️ Escribe tu consulta:",
+            height=100,
+            placeholder="Ejemplo: ¿Qué dice la ley 1010 sobre acoso laboral?",
+            key="query_input"
+        )
+        
+        col1, col2, col3 = st.columns([1, 1, 4])
+        with col1:
+            submit = st.button("🚀 Consultar", type="primary", use_container_width=True)
+        with col2:
+            clear = st.button("🗑️ Limpiar", use_container_width=True)
+        
+        if clear:
+            st.rerun()
+        
+        # Procesar consulta
+        if submit and user_query.strip():
+            try:
+                # Mostrar progreso
+                with st.status("🔄 Procesando consulta...", expanded=True) as status:
+                    st.write("🔍 Clasificando consulta...")
+                    time.sleep(0.5)
+                    
+                    st.write("🔧 Evaluando herramientas...")
+                    time.sleep(0.5)
+                    
+                    st.write("📚 Recuperando documentos...")
+                    time.sleep(0.5)
+                    
+                    # Ejecutar el grafo
+                    initial_state = {
+                        "query": user_query,
+                        "classification": "",
+                        "documents": [],
+                        "tool_results": None,
+                        "answer": "",
+                        "verification": {},
+                        "metadata": {}
+                    }
+                    
+                    result = st.session_state.graph.invoke(initial_state)
+                    
+                    st.write("✍️ Generando respuesta...")
+                    time.sleep(0.5)
+                    
+                    st.write("✅ Verificando calidad...")
+                    time.sleep(0.5)
+                    
+                    status.update(label="✅ Consulta procesada exitosamente", state="complete")
+                
+                st.markdown("---")
+                
+                # Mostrar resultados
+                display_response(result)
+                
+                # Agregar al historial
+                st.session_state.history.append({
+                    "query": user_query,
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "classification": result.get("classification"),
+                    "quality": result.get("verification", {}).get("quality_level")
+                })
+                
+            except Exception as e:
+                st.error(f"❌ Error al procesar la consulta: {str(e)}")
+                st.exception(e)
+        
+        elif submit and not user_query.strip():
+            st.warning("⚠️ Por favor, escribe una consulta antes de enviar.")
+        
+        # Mostrar historial si existe
+        if st.session_state.history:
+            st.markdown("---")
+            with st.expander("📜 Historial de consultas"):
+                for i, item in enumerate(reversed(st.session_state.history[-5:]), 1):
+                    st.write(f"**{i}.** {item['query']}")
+                    st.write(f"   └─ {item['timestamp']} | {item['classification']} | {item['quality']}")
 
 
 if __name__ == "__main__":
