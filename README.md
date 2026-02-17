@@ -199,6 +199,44 @@ resultado = calculate_prestaciones_sociales.invoke({
 print(f"Total prestaciones: ${resultado['total_prestaciones']:,.2f}")
 ```
 
+### 🌐 Aplicación Web con Streamlit
+
+#### Iniciar la aplicación
+
+```bash
+# Opción 1: Usando el script de inicio
+python run_app.py
+
+# Opción 2: Directamente con streamlit
+streamlit run app.py
+
+# Opción 3: Con configuración personalizada
+streamlit run app.py --server.port 8501
+```
+
+La aplicación se abrirá automáticamente en http://localhost:8501
+
+#### Características de la UI
+
+- **📝 Área de consulta**: Entrada de texto para realizar preguntas
+- **💡 Ejemplos predefinidos**: 6 consultas de ejemplo para cada tipo de herramienta
+- **📊 Panel de resultados**: 
+  - Respuesta principal con formato markdown
+  - Información del proceso (clasificación, herramientas, calidad)
+  - Documentos consultados con IDs y metadatos
+  - Detalles técnicos expandibles
+- **📜 Historial**: Registro de las últimas 5 consultas
+- **⚡ Indicador de progreso**: Visualización del proceso en tiempo real
+
+#### Tipos de consultas soportadas
+
+1. **Cálculos**: Prestaciones sociales, liquidaciones
+2. **Documentos específicos**: Leyes, decretos, sentencias por número
+3. **Búsqueda por rango**: Normativa publicada entre años específicos
+4. **Artículos específicos**: Extracción de artículos particulares
+5. **Comparaciones**: Diferencias entre dos documentos legales
+6. **Resúmenes**: Vista general de un documento completo
+
 ## 🏗️ Arquitectura
 
 ### Flujo del Sistema

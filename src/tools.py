@@ -3,7 +3,6 @@ Tools para el RAG de normativa laboral colombiana.
 Estas herramientas extienden las capacidades del sistema RAG.
 """
 from typing import List, Dict, Optional
-from datetime import datetime
 from langchain_core.tools import tool
 from langchain_core.documents import Document
 import re
@@ -113,19 +112,67 @@ def extract_specific_article(doc_id: str, article_number: str, vectorstore) -> O
     Extrae un artículo específico de un documento legal.
     
     Args:
-        doc_id: ID del documento (ej: "LEY_1010_2006")
+        doc_id: ID del documento (ej: "LEY_1010_2006" o "LEY_1010")
         article_number: Número del artículo a extraer
         vectorstore: Vectorstore de ChromaDB
         
     Returns:
         Contenido del artículo o None si no se encuentra
     """
-    # Buscar por ID de documento
-    results = vectorstore.similarity_search(
-        f"articulo {article_number}",
-        k=20,
-        filter={"id_documento": doc_id}
-    )
+    results = []
+    query = f"articulo {article_number}"
+    
+    # Estrategia 1: Búsqueda con ID exacto
+    try:
+        results = vectorstore.similarity_search(
+            query,
+            k=20,
+            filter={"id_documento": {"$eq": doc_id}}
+        )
+    except Exception as e:
+        pass
+    
+    # Estrategia 2: Buscar por tipo y número (sin año)
+    if not results:
+        try:
+            parts = doc_id.split("_")
+            if len(parts) >= 2:
+                doc_type = parts[0]
+                doc_number = parts[1]
+                
+                results = vectorstore.similarity_search(
+                    query,
+                    k=20,
+                    filter={
+                        "$and": [
+                            {"tipo_documento": {"$eq": doc_type}},
+                            {"numero": {"$eq": doc_number}}
+                        ]
+                    }
+                )
+        except Exception as e:
+            pass
+    
+    # Estrategia 3: Búsqueda manual (fallback)
+    if not results:
+        try:
+            parts = doc_id.split("_")
+            if len(parts) >= 2:
+                doc_type = parts[0]
+                doc_number = parts[1]
+                
+                all_docs = vectorstore.similarity_search(
+                    f"{doc_type.lower()} {doc_number} {query}",
+                    k=100
+                )
+                
+                results = [
+                    doc for doc in all_docs
+                    if (doc.metadata.get("tipo_documento", "") == doc_type and
+                        str(doc.metadata.get("numero", "")) == doc_number)
+                ][:20]
+        except Exception as e:
+            pass
     
     # Buscar el artículo específico en los resultados
     for doc in results:
@@ -151,37 +198,87 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
     Compara dos documentos legales sobre un tema específico.
     
     Args:
-        doc_id1: ID del primer documento
-        doc_id2: ID del segundo documento
+        doc_id1: ID del primer documento (ej: "LEY_1010" o "LEY_1010_2006")
+        doc_id2: ID del segundo documento (ej: "DECRETO_1072" o "DECRETO_1072_2015")
         topic: Tema a comparar
         vectorstore: Vectorstore de ChromaDB
         
     Returns:
         Diccionario con información comparativa
     """
-    # Buscar en ambos documentos
-    results1 = vectorstore.similarity_search(
-        topic,
-        k=5,
-        filter={"id_documento": doc_id1}
-    )
     
-    results2 = vectorstore.similarity_search(
-        topic,
-        k=5,
-        filter={"id_documento": doc_id2}
-    )
+    def search_document(doc_id: str, query: str):
+        """Busca un documento usando estrategias progresivas"""
+        results = []
+        
+        # Estrategia 1: Búsqueda con ID exacto
+        try:
+            results = vectorstore.similarity_search(
+                query,
+                k=10,
+                filter={"id_documento": {"$eq": doc_id}}
+            )
+        except Exception as e:
+            pass
+        
+        # Estrategia 2: Buscar por tipo y número (sin año)
+        if not results:
+            try:
+                parts = doc_id.split("_")
+                if len(parts) >= 2:
+                    doc_type = parts[0]
+                    doc_number = parts[1]
+                    
+                    results = vectorstore.similarity_search(
+                        query,
+                        k=10,
+                        filter={
+                            "$and": [
+                                {"tipo_documento": {"$eq": doc_type}},
+                                {"numero": {"$eq": doc_number}}
+                            ]
+                        }
+                    )
+            except Exception as e:
+                pass
+        
+        # Estrategia 3: Búsqueda manual (fallback)
+        if not results:
+            try:
+                parts = doc_id.split("_")
+                if len(parts) >= 2:
+                    doc_type = parts[0]
+                    doc_number = parts[1]
+                    
+                    all_docs = vectorstore.similarity_search(
+                        f"{doc_type.lower()} {doc_number} {query}",
+                        k=100
+                    )
+                    
+                    results = [
+                        doc for doc in all_docs
+                        if (doc.metadata.get("tipo_documento", "") == doc_type and
+                            str(doc.metadata.get("numero", "")) == doc_number)
+                    ][:10]
+            except Exception as e:
+                pass
+        
+        return results
+    
+    # Buscar en ambos documentos
+    results1 = search_document(doc_id1, topic)
+    results2 = search_document(doc_id2, topic)
     
     comparison = {
         "documento1": {
             "id": doc_id1,
             "fragmentos_encontrados": len(results1),
-            "contenido": [doc.page_content[:200] for doc in results1[:2]]
+            "contenido": [doc.page_content for doc in results1]  # Contenido completo de todos los fragmentos
         },
         "documento2": {
             "id": doc_id2,
             "fragmentos_encontrados": len(results2),
-            "contenido": [doc.page_content[:200] for doc in results2[:2]]
+            "contenido": [doc.page_content for doc in results2]  # Contenido completo de todos los fragmentos
         },
         "tema_comparacion": topic
     }
@@ -203,18 +300,19 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
     """
     results = []
     
-    # Estrategia 1: Búsqueda por ID exacto
+    # Estrategia 1: Búsqueda con filtro de metadata por ID exacto (EFICIENTE)
     try:
-        # Buscar todos los documentos del ID
-        all_docs = vectorstore.similarity_search("documento ley decreto sentencia normativa legal", k=100)
-        results = [
-            doc for doc in all_docs 
-            if doc.metadata.get("id_documento", "") == doc_id
-        ]
+        filter_dict = {"id_documento": {"$eq": doc_id}}
+        # Buscar con filtro - recuperar todos los fragmentos del documento
+        results = vectorstore.similarity_search(
+            query="contenido documento",  # Query genérica
+            k=500,  # Suficientes fragmentos para documento completo
+            filter=filter_dict
+        )
     except Exception as e:
-        pass
+        print(f"⚠️ Estrategia 1 falló: {e}")
     
-    # Estrategia 2: Por tipo y número si no encontramos el ID exacto
+    # Estrategia 2: Por tipo y número usando filtros de metadata
     if not results:
         try:
             parts = doc_id.split("_")
@@ -222,33 +320,45 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
                 doc_type = parts[0]
                 doc_number = parts[1]
                 
-                all_docs = vectorstore.similarity_search("documento ley decreto sentencia normativa", k=150)
-                results = [
-                    doc for doc in all_docs 
-                    if doc.metadata.get("tipo_documento", "") == doc_type and
-                       str(doc.metadata.get("numero", "")) == doc_number
-                ]
+                # Usar filtro de ChromaDB
+                filter_dict = {
+                    "$and": [
+                        {"tipo_documento": {"$eq": doc_type}},
+                        {"numero": {"$eq": doc_number}}
+                    ]
+                }
+                
+                results = vectorstore.similarity_search(
+                    query="contenido documento",
+                    k=500,
+                    filter=filter_dict
+                )
         except Exception as e:
-            pass
+            print(f"⚠️ Estrategia 2 falló: {e}")
     
-    # Estrategia 3: Con query descriptiva
+    # Estrategia 3: Búsqueda manual (fallback) - SOLO si las anteriores fallan
     if not results:
         try:
             parts = doc_id.split("_")
             if len(parts) >= 2:
-                doc_type = parts[0].lower()
+                doc_type = parts[0]
                 doc_number = parts[1]
-                query = f"{doc_type} número {doc_number}"
                 
-                docs_with_scores = vectorstore.similarity_search_with_score(query, k=100)
-                results = [doc for doc, score in docs_with_scores]
+                # Búsqueda amplia sin filtros
+                all_docs = vectorstore.similarity_search(
+                    query=f"{doc_type.lower()} {doc_number}",
+                    k=1000
+                )
+                
+                # Filtrado manual
                 results = [
-                    doc for doc in results 
-                    if str(doc.metadata.get("numero", "")) == doc_number and
-                       doc.metadata.get("tipo_documento", "") == parts[0]
+                    doc for doc in all_docs 
+                    if doc.metadata.get("id_documento", "") == doc_id or
+                       (doc.metadata.get("tipo_documento", "") == doc_type and
+                        str(doc.metadata.get("numero", "")) == doc_number)
                 ]
         except Exception as e:
-            pass
+            print(f"⚠️ Estrategia 3 falló: {e}")
     
     if not results:
         return {
@@ -282,39 +392,4 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
     }
 
 
-# Diccionario de tools para fácil acceso
-AVAILABLE_TOOLS = {
-    "search_by_document_type": search_by_document_type,
-    "search_by_year_range": search_by_year_range,
-    "calculate_prestaciones_sociales": calculate_prestaciones_sociales,
-    "extract_specific_article": extract_specific_article,
-    "compare_documents": compare_documents,
-    "resume_document": resume_document,
-}
 
-
-def get_tool_descriptions() -> str:
-    """
-    Retorna descripciones de todas las herramientas disponibles.
-    """
-    return """
-Herramientas disponibles:
-
-1. search_by_document_type(query, doc_type, vectorstore)
-   - Busca por tipo específico: LEY, DECRETO, SENTENCIA
-   
-2. search_by_year_range(query, start_year, end_year, vectorstore)
-   - Busca documentos en un rango de años
-   
-3. calculate_prestaciones_sociales(salario_mensual, dias_trabajados, años_servicio)
-   - Calcula cesantías, prima, vacaciones e intereses
-   
-4. extract_specific_article(doc_id, article_number, vectorstore)
-   - Extrae un artículo específico de un documento
-   
-5. compare_documents(doc_id1, doc_id2, topic, vectorstore)
-   - Compara dos documentos sobre un tema
-
-6. resume_document(doc_id, vectorstore)
-   - Resume el contenido de un documento específico
-"""

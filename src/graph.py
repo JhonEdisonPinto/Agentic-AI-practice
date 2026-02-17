@@ -15,7 +15,6 @@ from langgraph.graph import END, StateGraph
 
 from src.config import init_embeddings, init_gemini_llm, init_groq_llm
 from src.vectorstore import load_chroma_index
-from src.tools import AVAILABLE_TOOLS
 import os
 import re
 
@@ -417,13 +416,35 @@ def retrieve_node(state: RAGState) -> RAGState:
                 print(f"         Doc1: {comparison_result['documento1']['fragmentos_encontrados']} fragmentos")
                 print(f"         Doc2: {comparison_result['documento2']['fragmentos_encontrados']} fragmentos")
                 
-                # Buscar documentos de ambos para el contexto
-                filter_dict = {
-                    "$or": [
-                        {"id_documento": {"$eq": doc_id1}},
-                        {"id_documento": {"$eq": doc_id2}}
-                    ]
-                }
+                # Crear documentos directamente desde los resultados de la comparación
+                doc1_contenido = comparison_result['documento1'].get('contenido', [])
+                doc2_contenido = comparison_result['documento2'].get('contenido', [])
+                
+                for i, contenido in enumerate(doc1_contenido, 1):
+                    doc = Document(
+                        page_content=contenido,
+                        metadata={
+                            "id_documento": doc_id1,
+                            "source": "compare_documents",
+                            "documento": 1,
+                            "fragmento": i
+                        }
+                    )
+                    documents.append(doc)
+                
+                for i, contenido in enumerate(doc2_contenido, 1):
+                    doc = Document(
+                        page_content=contenido,
+                        metadata={
+                            "id_documento": doc_id2,
+                            "source": "compare_documents",
+                            "documento": 2,
+                            "fragmento": i
+                        }
+                    )
+                    documents.append(doc)
+                
+                print(f"      ✓ {len(documents)} documentos creados para contexto")
             
             # 3. Ejecutar herramienta search_by_year_range
             elif tool_used == "search_by_year_range":

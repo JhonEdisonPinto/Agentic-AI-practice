@@ -16,7 +16,7 @@ from src.tools import (
     search_by_year_range,
     extract_specific_article,
     compare_documents,
-    get_tool_descriptions
+    resume_document
 )
 import os
 
@@ -42,12 +42,6 @@ def test_tools():
     except Exception as e:
         print(f"   ✗ Error: {e}")
         return
-    
-    # Mostrar descripción de tools
-    print("\n" + "=" * 80)
-    print("HERRAMIENTAS DISPONIBLES")
-    print("=" * 80)
-    print(get_tool_descriptions())
     
     # ========================================================================
     # TOOL 1: Búsqueda por tipo de documento
