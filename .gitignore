@@ -5,9 +5,9 @@
 
 # Archivos de ChromaDB (base de datos local)
 # COMENTADO: Permitimos subir data/chroma para despliegue
-# data/
-# chroma/
-# *.db
+data/
+chroma/
+*.db
 
 # Python
 __pycache__/
