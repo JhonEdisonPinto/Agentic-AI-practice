@@ -3,12 +3,11 @@
 .env.local
 .env.*.local
 
-# Archivos de ChromaDB (base de datos local - se genera automáticamente)
-data/chroma/
-*.db
-
-# NO ignorar los PDFs del corpus (necesarios para generar BD en despliegue)
-!src/corpus/*.pdf
+# Archivos de ChromaDB (base de datos local)
+# COMENTADO: Permitimos subir data/chroma para despliegue
+# data/
+# chroma/
+# *.db
 
 # Python
 __pycache__/

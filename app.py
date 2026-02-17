@@ -4,8 +4,6 @@ Sistema de consulta inteligente con LangGraph y ChromaDB.
 """
 import streamlit as st
 import time
-import sys
-import subprocess
 from typing import Dict, Any
 from pathlib import Path
 
@@ -23,96 +21,31 @@ st.set_page_config(
 
 
 def check_database():
-    """Verifica si existe y funciona la base de datos ChromaDB."""
+    """Verifica si existe la base de datos ChromaDB."""
     chroma_dir = Path("./data/chroma")
-    
-    # Verificar si existe
-    if not chroma_dir.exists() or not any(chroma_dir.glob("*")):
-        return False
-    
-    # Verificar si funciona (no está corrupta)
-    try:
-        from src.config import init_embeddings
-        from src.vectorstore import load_chroma_index
-        import os
-        
-        persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
-        collection_name = os.getenv("CHROMA_COLLECTION_NAME", "normativa_laboral")
-        embedding_fn = init_embeddings()
-        
-        vectorstore = load_chroma_index(persist_dir, embedding_fn, collection_name)
-        # Intentar hacer una consulta simple
-        vectorstore.similarity_search("test", k=1)
-        return True
-    except Exception as e:
-        print(f"⚠️ BD corrupta o inaccesible: {e}")
-        return False
-
-
-def initialize_database():
-    """Genera la base de datos desde los PDFs si no existe o está corrupta."""
-    corpus_dir = Path("./src/corpus")
-    
-    # Verificar si existen PDFs
-    if not corpus_dir.exists() or not list(corpus_dir.glob("*.pdf")):
-        st.error("❌ No se encontraron PDFs en `src/corpus/`")
-        st.info("""
-        **Para que funcione el sistema necesitas:**
-        
-        1. Subir los PDFs a la carpeta `src/corpus/`
-        2. O subir la carpeta `data/` completa usando Git LFS
-        
-        **Contacta al administrador del sistema.**
-        """)
-        st.stop()
-        return False
-    
-    # Generar la base de datos
-    st.info("🔨 Generando base de datos desde PDFs. Esto puede tomar varios minutos...")
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    try:
-        status_text.text("📚 Indexando documentos...")
-        progress_bar.progress(10)
-        
-        # Ejecutar el script de indexación
-        result = subprocess.run(
-            [sys.executable, "index_pdfs.py"],
-            capture_output=True,
-            text=True,
-            timeout=600  # 10 minutos máximo
-        )
-        
-        progress_bar.progress(90)
-        
-        if result.returncode == 0:
-            progress_bar.progress(100)
-            status_text.text("✅ Base de datos generada exitosamente")
-            time.sleep(2)
-            return True
-        else:
-            st.error(f"❌ Error al generar la BD:\n```\n{result.stderr}\n```")
-            return False
-            
-    except subprocess.TimeoutExpired:
-        st.error("⏱️ La generación de la BD excedió el tiempo límite")
-        return False
-    except Exception as e:
-        st.error(f"❌ Error al generar la BD: {str(e)}")
-        return False
+    return chroma_dir.exists() and any(chroma_dir.glob("*"))
 
 
 def initialize_session_state():
     """Inicializa el estado de la sesión."""
-    # Verificar y generar base de datos si es necesario
-    if "db_initialized" not in st.session_state:
-        if not check_database():
-            st.warning("⚠️ Base de datos no disponible. Generando desde PDFs...")
-            if not initialize_database():
-                st.stop()
-        st.session_state.db_initialized = True
+    # Verificar base de datos
+    if not check_database():
+        st.error("❌ Base de datos no encontrada")
+        st.info("""
+        **Para desplegar correctamente:**
+        
+        1. **Opción Simple**: Sube la carpeta `data/` al repositorio
+           ```bash
+           # Descomenta en .gitignore las líneas de data/
+           git add data/
+           git commit -m "Add database for deployment"
+           git push
+           ```
+        
+        2. **Opción Avanzada**: Los PDFs deben estar en `src/corpus/` 
+           y se generará automáticamente
+        """)
+        st.stop()
     
     if "graph" not in st.session_state:
         with st.spinner("🔨 Construyendo grafo RAG..."):
