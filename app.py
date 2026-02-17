@@ -20,35 +20,32 @@ st.set_page_config(
 )
 
 
-def check_and_initialize_database():
-    """Verifica la base de datos ChromaDB."""
+def check_database():
+    """Verifica si existe la base de datos ChromaDB."""
     chroma_dir = Path("./data/chroma")
-    
-    # Verificar si existe la BD
-    if not chroma_dir.exists() or not any(chroma_dir.glob("*.sqlite3")):
-        st.error("❌ Base de datos no encontrada")
-        st.info("""
-        **Error de despliegue:**
-        
-        La base de datos ChromaDB no está disponible. Esto puede ocurrir si:
-        1. La carpeta `data/` no se subió al repositorio
-        2. El archivo está en .gitignore
-        
-        **Solución:**
-        - Descomenta `data/` en .gitignore y haz push al repo
-        """)
-        st.stop()
-        return False
-    
-    return True
+    return chroma_dir.exists() and any(chroma_dir.glob("*"))
 
 
 def initialize_session_state():
     """Inicializa el estado de la sesión."""
-    # Verificar base de datos (solo una vez)
-    if "db_initialized" not in st.session_state:
-        check_and_initialize_database()
-        st.session_state.db_initialized = True
+    # Verificar base de datos
+    if not check_database():
+        st.error("❌ Base de datos no encontrada")
+        st.info("""
+        **Para desplegar correctamente:**
+        
+        1. **Opción Simple**: Sube la carpeta `data/` al repositorio
+           ```bash
+           # Descomenta en .gitignore las líneas de data/
+           git add data/
+           git commit -m "Add database for deployment"
+           git push
+           ```
+        
+        2. **Opción Avanzada**: Los PDFs deben estar en `src/corpus/` 
+           y se generará automáticamente
+        """)
+        st.stop()
     
     if "graph" not in st.session_state:
         with st.spinner("🔨 Construyendo grafo RAG..."):

@@ -4,9 +4,9 @@
 .env.*.local
 
 # Archivos de ChromaDB (base de datos local)
-# NOTA: Comentado para permitir subir la BD pre-generada al despliegue
-# Descomenta estas líneas si solo quieres desarrollo local
-# data/chroma/
+# COMENTADO: Permitimos subir data/chroma para despliegue
+# data/
+# chroma/
 # *.db
 
 # Python

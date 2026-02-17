@@ -6,12 +6,11 @@ langchain-google-genai
 langchain-groq
 langchain-openai
 langgraph
-chromadb==0.5.23
+chromadb
 python-dotenv
 langsmith
 sentence-transformers
 langchain-huggingface
-langchain-chroma==0.1.4
+langchain-chroma
 pypdf
 unstructured[pdf]
-python-magic-bin; sys_platform == 'win32'
