@@ -303,10 +303,10 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
     # Estrategia 1: Búsqueda con filtro de metadata por ID exacto (EFICIENTE)
     try:
         filter_dict = {"id_documento": {"$eq": doc_id}}
-        # Buscar con filtro - recuperar todos los fragmentos del documento
+        # Buscar con filtro - recuperar fragmentos representativos del documento
         results = vectorstore.similarity_search(
             query="contenido documento",  # Query genérica
-            k=500,  # Suficientes fragmentos para documento completo
+            k=50,  # Número reducido para evitar exceder límites del modelo
             filter=filter_dict
         )
     except Exception as e:
@@ -330,7 +330,7 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
                 
                 results = vectorstore.similarity_search(
                     query="contenido documento",
-                    k=500,
+                    k=50,
                     filter=filter_dict
                 )
         except Exception as e:
@@ -347,7 +347,7 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
                 # Búsqueda amplia sin filtros
                 all_docs = vectorstore.similarity_search(
                     query=f"{doc_type.lower()} {doc_number}",
-                    k=1000
+                    k=100
                 )
                 
                 # Filtrado manual
@@ -372,14 +372,23 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
             "metadatos": {}
         }
     
-    # Compilar TODOS los fragmentos (sin truncar)
+    # Compilar fragmentos con límite de tamaño
     metadatos = results[0].metadata if results else {}
     
-    # Juntar todo el contenido disponible
+    # Juntar contenido con límite de caracteres para evitar error 413
     fragmentos_ordenados = [doc.page_content for doc in results]
-    contenido_completo = "\n\n---\n\n".join(fragmentos_ordenados)
+    contenido_completo = ""
+    MAX_CHARS = 15000  # Límite de caracteres para evitar exceder el modelo
     
-    # Devolver el contenido completo para que el LLM lo resuma
+    for fragmento in fragmentos_ordenados:
+        if len(contenido_completo) + len(fragmento) + 10 < MAX_CHARS:
+            contenido_completo += fragmento + "\n\n---\n\n"
+        else:
+            # Truncar si excede el límite
+            contenido_completo += "\n\n[... contenido truncado para ajustarse al modelo ...]"
+            break
+    
+    # Devolver el contenido limitado para que el LLM lo resuma
     return {
         "id_documento": doc_id,
         "titulo": metadatos.get("titulo", f"{metadatos.get('tipo_documento', 'Documento')} {metadatos.get('numero', '')}"),
