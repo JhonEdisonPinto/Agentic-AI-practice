@@ -119,75 +119,102 @@ def extract_specific_article(doc_id: str, article_number: str, vectorstore) -> O
     Returns:
         Contenido del artículo o None si no se encuentra
     """
-    results = []
-    query = f"articulo {article_number}"
+    # Parsear el document ID
+    parts = doc_id.split("_")
+    if len(parts) < 2:
+        return None
     
-    # Estrategia 1: Búsqueda con ID exacto
-    try:
-        results = vectorstore.similarity_search(
-            query,
-            k=20,
-            filter={"id_documento": {"$eq": doc_id}}
-        )
-    except Exception as e:
-        pass
+    doc_type = parts[0]
+    doc_number = parts[1]
+    doc_year = parts[2] if len(parts) >= 3 else None
     
-    # Estrategia 2: Buscar por tipo y número (sin año)
-    if not results:
+    # Crear queries muy específicas que incluyan el texto literal del artículo
+    queries = [
+        f"Artículo {article_number}º",  # Query más simple y directa
+        f"ARTÍCULO {article_number}º",
+        f"Artículo {article_number}º. {doc_type} {doc_number}",  # Con punto después del número
+        f"Artículo {article_number}",  # Sin símbolo
+        f"{doc_type} {doc_number} Artículo {article_number}",
+    ]
+    
+    if doc_year:
+        queries.extend([
+            f"{doc_type} {doc_number} {doc_year} Artículo {article_number}º",
+            f"ley {doc_number} de {doc_year} artículo {article_number}",
+        ])
+    
+    all_results = []
+    
+    # Probar cada query con un k mayor para capturar más chunks
+    for query in queries:
         try:
-            parts = doc_id.split("_")
-            if len(parts) >= 2:
-                doc_type = parts[0]
-                doc_number = parts[1]
-                
-                results = vectorstore.similarity_search(
-                    query,
-                    k=20,
-                    filter={
-                        "$and": [
-                            {"tipo_documento": {"$eq": doc_type}},
-                            {"numero": {"$eq": doc_number}}
-                        ]
-                    }
-                )
+            docs = vectorstore.similarity_search(query, k=50)  # Aumentado de 30 a 50
+            all_results.extend(docs)
         except Exception as e:
-            pass
+            continue
     
-    # Estrategia 3: Búsqueda manual (fallback)
-    if not results:
-        try:
-            parts = doc_id.split("_")
-            if len(parts) >= 2:
-                doc_type = parts[0]
-                doc_number = parts[1]
-                
-                all_docs = vectorstore.similarity_search(
-                    f"{doc_type.lower()} {doc_number} {query}",
-                    k=100
-                )
-                
-                results = [
-                    doc for doc in all_docs
-                    if (doc.metadata.get("tipo_documento", "") == doc_type and
-                        str(doc.metadata.get("numero", "")) == doc_number)
-                ][:20]
-        except Exception as e:
-            pass
+    # Eliminar duplicados manteniendo el orden
+    seen_contents = set()
+    unique_results = []
+    for doc in all_results:
+        if doc.page_content not in seen_contents:
+            seen_contents.add(doc.page_content)
+            unique_results.append(doc)
     
-    # Buscar el artículo específico en los resultados
-    for doc in results:
-        content = doc.page_content
-        # Buscar patrones como "Artículo X", "ARTÍCULO X", "Art. X"
-        patterns = [
-            f"Artículo {article_number}[.:]",
-            f"ARTÍCULO {article_number}[.:]",
-            f"Art\\. {article_number}[.:]",
-            f"Artículo {article_number}\\.",
-        ]
+    # Filtrar por metadata del documento correcto
+    filtered_results = []
+    for doc in unique_results:
+        meta = doc.metadata
+        meta_tipo = str(meta.get("tipo_documento", "")).upper()
+        meta_numero = str(meta.get("numero", ""))
+        meta_año = str(meta.get("año", ""))
         
+        # Verificar que coincida el tipo y número
+        if meta_tipo == doc_type.upper() and meta_numero == doc_number:
+            # Si tenemos año, verificarlo también
+            if doc_year is None or meta_año == doc_year:
+                filtered_results.append(doc)
+    
+    # Buscar el artículo específico en los resultados filtrados
+    patterns = [
+        f"Artículo {article_number}º",  # Formato principal: "Artículo 4º"
+        f"ARTÍCULO {article_number}º",  # Mayúsculas: "ARTÍCULO 4º"
+        f"[Aa]rtículo {article_number}º",  # Case insensitive
+        f"Artículo {article_number}\\.",  # Con punto directo: "Artículo 4."
+        f"ARTÍCULO {article_number}\\.",
+        f"Art\\. {article_number}º",  # Abreviatura: "Art. 4º"
+        f"Artículo {article_number}[°º]",  # Con cualquier variante de grado
+    ]
+    
+    # Primero intentar en resultados filtrados (más precisos)
+    for doc in filtered_results:
+        content = doc.page_content
         for pattern in patterns:
             if re.search(pattern, content, re.IGNORECASE):
                 return content
+    
+    # Si no encontramos con filtros estrictos, buscar en TODOS los resultados únicos
+    # (puede que el metadata esté mal pero el contenido sí tenga el artículo)
+    print(f"      ℹ️ Buscando en {len(unique_results)} documentos únicos...")
+    for doc in unique_results:
+        if str(doc.metadata.get("numero", "")) == doc_number:
+            content = doc.page_content
+            for pattern in patterns:
+                if re.search(pattern, content, re.IGNORECASE):
+                    print(f"      ✓ Encontrado en documento con número {doc_number}")
+                    return content
+    
+    # Último intento: buscar el patrón en CUALQUIER documento sin filtros
+    # (muy relajado, solo para casos donde metadata esté completamente mal)
+    print(f"      ℹ️ Último intento: buscando en todos los documentos sin filtros...")
+    for doc in unique_results:
+        content = doc.page_content
+        for pattern in patterns:
+            if re.search(pattern, content, re.IGNORECASE):
+                # Verificar que al menos mencione el documento correcto en el contenido
+                if doc_number in content or doc_type.lower() in content.lower():
+                    print(f"      ✓ Encontrado en documento: {doc.metadata.get('id_documento', 'desconocido')}")
+                    return content
     
     return None
 

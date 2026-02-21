@@ -386,13 +386,21 @@ def retrieve_node(state: RAGState) -> RAGState:
                     documents = [doc]
                     print(f"      ✓ Artículo {article_number} extraído exitosamente")
                 else:
-                    print(f"      ⚠️ Artículo no encontrado, usando búsqueda por metadata")
-                    # Fallback: buscar con filtros de metadata
-                    filter_dict = {
-                        "$and": [
-                            {"id_documento": {"$eq": doc_id}},
-                        ]
-                    }
+                    print(f"      ⚠️ Artículo {article_number} no encontrado en {doc_id}")
+                    # Para extracción de artículos, si no se encuentra, devolver mensaje
+                    # NO hacer búsqueda genérica porque el usuario pidió algo específico
+                    doc = Document(
+                        page_content=f"No se pudo encontrar el Artículo {article_number} en {doc_id}. El formato del artículo en el documento puede ser diferente o el artículo puede no existir en la base de datos.",
+                        metadata={
+                            "id_documento": doc_id,
+                            "tipo_documento": tool_results.get("doc_type"),
+                            "articulo": article_number,
+                            "source": "extract_specific_article",
+                            "not_found": True
+                        }
+                    )
+                    documents = [doc]
+                    # No establecer filter_dict para evitar búsqueda adicional
             
             # 2. Ejecutar herramienta compare_documents
             elif tool_used == "compare_documents":
