@@ -101,8 +101,8 @@ def split_documents(documents: List[Document]) -> List[Document]:
     print("\n✂️  Dividiendo documentos en chunks...")
     
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,  # Tamaño del chunk en caracteres
-        chunk_overlap=200,  # Overlap para mantener contexto
+        chunk_size=2000,  # Tamaño del chunk en caracteres
+        chunk_overlap=500,  # Overlap para mantener contexto
         length_function=len,
         separators=["\n\n", "\n", ". ", " ", ""],
     )

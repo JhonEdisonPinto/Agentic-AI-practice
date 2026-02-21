@@ -223,6 +223,7 @@ def extract_specific_article(doc_id: str, article_number: str, vectorstore) -> O
 def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Dict[str, any]:
     """
     Compara dos documentos legales sobre un tema específico.
+    OPTIMIZADO: Limita la cantidad de información para evitar exceder límites del modelo.
     
     Args:
         doc_id1: ID del primer documento (ej: "LEY_1010" o "LEY_1010_2006")
@@ -231,8 +232,12 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
         vectorstore: Vectorstore de ChromaDB
         
     Returns:
-        Diccionario con información comparativa
+        Diccionario con información comparativa (optimizada)
     """
+    
+    # Configuración optimizada
+    MAX_FRAGMENTS_PER_DOC = 5  # Reducido de 10 a 5
+    MAX_CHARS_PER_FRAGMENT = 800  # Limitar cada fragmento
     
     def search_document(doc_id: str, query: str):
         """Busca un documento usando estrategias progresivas"""
@@ -242,7 +247,7 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
         try:
             results = vectorstore.similarity_search(
                 query,
-                k=10,
+                k=MAX_FRAGMENTS_PER_DOC,  # Usar configuración optimizada
                 filter={"id_documento": {"$eq": doc_id}}
             )
         except Exception as e:
@@ -258,7 +263,7 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
                     
                     results = vectorstore.similarity_search(
                         query,
-                        k=10,
+                        k=MAX_FRAGMENTS_PER_DOC,
                         filter={
                             "$and": [
                                 {"tipo_documento": {"$eq": doc_type}},
@@ -279,35 +284,60 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
                     
                     all_docs = vectorstore.similarity_search(
                         f"{doc_type.lower()} {doc_number} {query}",
-                        k=100
+                        k=20  # Reducido de 100 a 20
                     )
                     
                     results = [
                         doc for doc in all_docs
                         if (doc.metadata.get("tipo_documento", "") == doc_type and
                             str(doc.metadata.get("numero", "")) == doc_number)
-                    ][:10]
+                    ][:MAX_FRAGMENTS_PER_DOC]
             except Exception as e:
                 pass
         
         return results
     
+    def truncate_content(content: str, max_chars: int) -> str:
+        """Trunca el contenido manteniendo las partes más relevantes"""
+        if len(content) <= max_chars:
+            return content
+        # Mantener el inicio (más relevante semánticamente)
+        return content[:max_chars] + "..."
+    
     # Buscar en ambos documentos
     results1 = search_document(doc_id1, topic)
     results2 = search_document(doc_id2, topic)
+    
+    # Optimizar contenido: limitar y truncar fragmentos
+    contenido1_optimizado = [
+        truncate_content(doc.page_content, MAX_CHARS_PER_FRAGMENT) 
+        for doc in results1[:MAX_FRAGMENTS_PER_DOC]
+    ]
+    
+    contenido2_optimizado = [
+        truncate_content(doc.page_content, MAX_CHARS_PER_FRAGMENT) 
+        for doc in results2[:MAX_FRAGMENTS_PER_DOC]
+    ]
     
     comparison = {
         "documento1": {
             "id": doc_id1,
             "fragmentos_encontrados": len(results1),
-            "contenido": [doc.page_content for doc in results1]  # Contenido completo de todos los fragmentos
+            "contenido": contenido1_optimizado,  # Contenido optimizado
+            "total_fragmentos_disponibles": len(results1)  # Info para el usuario
         },
         "documento2": {
             "id": doc_id2,
             "fragmentos_encontrados": len(results2),
-            "contenido": [doc.page_content for doc in results2]  # Contenido completo de todos los fragmentos
+            "contenido": contenido2_optimizado,  # Contenido optimizado
+            "total_fragmentos_disponibles": len(results2)
         },
-        "tema_comparacion": topic
+        "tema_comparacion": topic,
+        "optimizacion": {
+            "fragmentos_por_documento": MAX_FRAGMENTS_PER_DOC,
+            "caracteres_maximos_por_fragmento": MAX_CHARS_PER_FRAGMENT,
+            "nota": "Contenido optimizado para evitar exceder límites del modelo"
+        }
     }
     
     return comparison

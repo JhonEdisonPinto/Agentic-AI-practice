@@ -193,10 +193,10 @@ def tool_calling_node(state: RAGState) -> RAGState:
                     pass
     
     # 2. HERRAMIENTA: extract_specific_article
-    # Detectar consultas sobre artículos específicos (ej: "artículo 5 de la ley 1010")
+    # Detectar consultas sobre artículos específicos (ej: "artículo 5 de la ley 1010", "artículo 2 del decreto 1072")
     if not tool_results and classification != "resume":
         article_match = re.search(
-            r'art[íi]culo\s+(\d+)\s+(?:de\s+)?(?:la\s+)?(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?',
+            r'art[íi]culo\s+(\d+)\s+.*?\b(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?',
             query,
             re.IGNORECASE
         )
@@ -308,7 +308,7 @@ def tool_calling_node(state: RAGState) -> RAGState:
     # 5. HERRAMIENTA: search_by_year_range
     # Detectar rango de años
     if not tool_results and classification != "resume":
-        year_match = re.findall(r'(19|20)\d{2}', query)
+        year_match = re.findall(r'\b(?:19|20)\d{2}\b', query)
         if len(year_match) >= 2:
             years = sorted([int(y) for y in year_match])
             print(f"   ✓ Detectado: Búsqueda por rango de años - {years[0]} a {years[-1]}")
@@ -639,15 +639,29 @@ def generate_node(state: RAGState) -> RAGState:
     try:
         llm = init_groq_llm()
         
-        # Construir contexto
-        context = "\n\n---\n\n".join([
-            f"Documento {i+1} ({doc.metadata.get('id_documento', 'N/A')}):\n{doc.page_content}"
-            for i, doc in enumerate(documents)
-        ])
+        # OPTIMIZACIÓN: Para comparaciones, limitar la cantidad de contexto
+        tool_results = state.get("tool_results")
+        is_comparison = tool_results and tool_results.get("tool_used") == "compare_documents"
+        
+        # Construir contexto de manera optimizada
+        if is_comparison:
+            # Para comparaciones, limitar documentos a los 10 más relevantes
+            limited_docs = documents[:10]
+            # Truncar cada documento a 1000 caracteres para comparaciones
+            context = "\n\n---\n\n".join([
+                f"Documento {i+1} ({doc.metadata.get('id_documento', 'N/A')}):\n{doc.page_content[:1000]}{'...' if len(doc.page_content) > 1000 else ''}"
+                for i, doc in enumerate(limited_docs)
+            ])
+            print(f"   📊 Contexto optimizado para comparación: {len(limited_docs)} docs, ~{len(context)} chars")
+        else:
+            # Para otras consultas, usar contexto normal
+            context = "\n\n---\n\n".join([
+                f"Documento {i+1} ({doc.metadata.get('id_documento', 'N/A')}):\n{doc.page_content}"
+                for i, doc in enumerate(documents)
+            ])
         
         # Agregar resultados de tools si existen
         tool_info = ""
-        tool_results = state.get("tool_results")
         if tool_results:
             tool_used = tool_results.get("tool_used", "N/A")
             tool_info = f"\n\n{'='*60}\nHERRAMIENTA EJECUTADA: {tool_used}\n{'='*60}\n"
@@ -661,6 +675,13 @@ def generate_node(state: RAGState) -> RAGState:
                 tool_info += f"- Documento 2: {comparison.get('documento2', {}).get('id', 'N/A')}\n"
                 tool_info += f"  Fragmentos encontrados: {comparison.get('documento2', {}).get('fragmentos_encontrados', 0)}\n"
                 tool_info += f"- Tema de comparación: {comparison.get('tema_comparacion', 'N/A')}\n"
+                
+                # Agregar nota de optimización si existe
+                if comparison.get('optimizacion'):
+                    opt = comparison['optimizacion']
+                    tool_info += f"\n⚙️ Optimización aplicada:\n"
+                    tool_info += f"  - Max {opt.get('fragmentos_por_documento', 'N/A')} fragmentos por documento\n"
+                    tool_info += f"  - Max {opt.get('caracteres_maximos_por_fragmento', 'N/A')} caracteres por fragmento\n"
             
             elif tool_used == "extract_specific_article":
                 tool_info += f"\nArtículo específico extraído:\n"
@@ -701,14 +722,16 @@ def generate_node(state: RAGState) -> RAGState:
         
         # Prompt mejorado según clasificación y herramientas
         if tool_results and tool_results.get("tool_used") == "compare_documents":
-            system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
+            system_prompt = """Eres un experto en derecho laboral colombiano especializado en análisis comparativo.
 
-Reglas:
-1. Estás haciendo una COMPARACIÓN entre documentos legales - enfoca tu respuesta en similitudes y diferencias
-2. Cita ambos documentos de manera específica
-3. Si la información no está en el contexto, di que no tienes esa información
-4. Sé claro, preciso y profesional en tu análisis comparativo
-5. Usa lenguaje accesible para el usuario"""
+TAREA: Compara los documentos legales proporcionados enfocándote en similitudes y diferencias.
+
+Reglas breves:
+1. Identifica puntos clave de cada documento sobre el tema
+2. Señala diferencias y coincidencias específicas
+3. Cita ambos documentos
+4. Sé conciso pero preciso
+5. Usa lenguaje claro"""
         elif tool_results and tool_results.get("tool_used") == "extract_specific_article":
             system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
 
@@ -745,6 +768,17 @@ INSTRUCCIONES CRÍTICAS PARA EL RESUMEN:
 6. El resumen debe ser ÚTIL y INFORMATIVO para alguien que necesita entender rápidamente qué dice el documento
 7. NO escribas frases genéricas como "el documento proporciona información" - SÉ ESPECÍFICO
 8. Cita artículos o números de sección cuando sea relevante"""
+        elif tool_results and tool_results.get("tool_used") == "search_by_year_range":
+            system_prompt = """Eres un experto en derecho laboral colombiano especializado en búsquedas temporales.
+
+TAREA: Responder sobre normativa publicada en un rango de años específico.
+
+Reglas:
+1. Lista los documentos encontrados en el rango solicitado
+2. Para cada documento, indica: tipo, número, año y tema principal
+3. Si el tema específico preguntado está en los documentos, resáltalo
+4. Si no hay información sobre el tema específico, indica qué documentos se encontraron pero no tratan ese tema
+5. Sé específico y útil"""
         else:
             system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
 
@@ -756,7 +790,25 @@ Reglas:
 5. Usa lenguaje accesible para el usuario"""
 
         # Crear prompts específicos según el tipo de herramienta
-        if tool_results and tool_results.get("tool_used") == "resume_document":
+        if tool_results and tool_results.get("tool_used") == "compare_documents":
+            # Prompt optimizado para comparaciones
+            comparison = tool_results.get("comparison_result", {})
+            user_prompt = f"""COMPARACIÓN DE DOCUMENTOS LEGALES:
+
+Documento 1: {comparison.get('documento1', {}).get('id', 'N/A')}
+Documento 2: {comparison.get('documento2', {}).get('id', 'N/A')}
+Tema: {comparison.get('tema_comparacion', 'N/A')}
+
+---FRAGMENTOS RELEVANTES---
+
+{context}
+
+---FIN DE FRAGMENTOS---
+
+Pregunta: {query}
+
+Responde comparando ambos documentos sobre el tema especificado. Sé conciso pero completo."""
+        elif tool_results and tool_results.get("tool_used") == "resume_document":
             user_prompt = f"""A continuación se proporciona el contenido COMPLETO de un documento legal.
 
 TAREA: Realiza un resumen DETALLADO y ORGANIZADO del documento.
@@ -781,6 +833,28 @@ Genera un resumen COMPLETO que incluya:
 ✓ Información adicional relevante
 
 Recuerda: Sé ESPECÍFICO. No escribas frases genéricas. Usa la información real del documento."""
+        elif tool_results and tool_results.get("tool_used") == "search_by_year_range":
+            start_year = tool_results.get('start_year', 'N/A')
+            end_year = tool_results.get('end_year', 'N/A')
+            user_prompt = f"""BÚSQUEDA DE NORMATIVA POR RANGO DE AÑOS: {start_year} - {end_year}
+
+Se encontraron los siguientes documentos publicados en este período:
+
+---DOCUMENTOS ENCONTRADOS---
+
+{context}
+
+---FIN DE DOCUMENTOS---
+
+Pregunta del usuario: {query}
+
+INSTRUCCIONES:
+1. Lista los documentos encontrados mencionando: tipo, número y año
+2. Indica qué temas trata cada documento basándote en el contenido mostrado
+3. Si algún documento trata específicamente el tema preguntado (por ejemplo "jornada laboral"), resáltalo
+4. Si ningún documento trata el tema específico, menciona qué documentos se encontraron en ese período
+
+Responde de manera informativa y útil."""
         else:
             user_prompt = f"""Contexto de normativa laboral colombiana:
 
@@ -800,10 +874,48 @@ Proporciona una respuesta clara y precisa basada en el contexto:"""
         response = llm.invoke(messages)
         answer = response.content.strip()
         
+        # Agregar citas de fuentes al final de la respuesta
+        sources_text = "\n\n" + "="*60 + "\n"
+        sources_text += "📚 **FUENTES DE INFORMACIÓN**\n"
+        sources_text += "="*60 + "\n\n"
+        
+        # Recolectar fuentes únicas
+        sources_seen = set()
+        sources_list = []
+        
+        for i, doc in enumerate(documents, 1):
+            doc_id = doc.metadata.get('id_documento', 'N/A')
+            
+            # Evitar duplicados
+            if doc_id in sources_seen:
+                continue
+            sources_seen.add(doc_id)
+            
+            # Extraer información del documento
+            tipo_doc = doc.metadata.get('tipo_documento', 'Documento')
+            año = doc.metadata.get('año', 'N/A')
+            titulo = doc.metadata.get('titulo', '')
+            
+            # Construir la cita
+            source_entry = f"{i}. **{tipo_doc}** {doc_id}"
+            if año != 'N/A':
+                source_entry += f" ({año})"
+            if titulo:
+                source_entry += f"\n   {titulo}"
+            
+            sources_list.append(source_entry)
+        
+        # Agregar las fuentes a la respuesta
+        if sources_list:
+            sources_text += "\n".join(sources_list)
+            answer = answer + sources_text
+        
         print(f"   ✓ Respuesta generada ({len(answer)} caracteres)")
+        print(f"   ✓ Fuentes incluidas: {len(sources_list)}")
         
         state["answer"] = answer
         state["metadata"]["generation_model"] = "groq-llama-3.1-70b"
+        state["metadata"]["sources_count"] = len(sources_list)
         
     except Exception as e:
         print(f"   ⚠️ Error en generación (usando respuesta basada en documentos): {str(e)[:100]}")
@@ -813,9 +925,25 @@ Proporciona una respuesta clara y precisa basada en el contexto:"""
 
 {documents[0].page_content[:500]}...
 
-Fuente: {documents[0].metadata.get('id_documento', 'Documento legal colombiano')}
+Nota: Esta es una extracción directa del documento. Para una respuesta más elaborada, se requiere configurar las API keys.
 
-Nota: Esta es una extracción directa del documento. Para una respuesta más elaborada, se requiere configurar las API keys."""
+{"="*60}
+📚 **FUENTES DE INFORMACIÓN**
+{"="*60}
+
+"""
+            # Agregar fuentes incluso en fallback
+            sources_seen = set()
+            for i, doc in enumerate(documents, 1):
+                doc_id = doc.metadata.get('id_documento', 'N/A')
+                if doc_id not in sources_seen:
+                    sources_seen.add(doc_id)
+                    tipo_doc = doc.metadata.get('tipo_documento', 'Documento')
+                    año = doc.metadata.get('año', 'N/A')
+                    answer += f"{i}. **{tipo_doc}** {doc_id}"
+                    if año != 'N/A':
+                        answer += f" ({año})"
+                    answer += "\n"
         else:
             answer = "No se encontró información relevante en la base de datos de normativa laboral."
         
