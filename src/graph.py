@@ -177,20 +177,38 @@ def tool_calling_node(state: RAGState) -> RAGState:
     if not tool_results and classification == "calculation":
         if any(word in query.lower() for word in ["prestaciones", "cesantías", "prima", "liquidación"]):
             print("   ✓ Detectado: Cálculo de prestaciones sociales")
-            # Extraer valores si están en la consulta
-            salary_match = re.search(r'[\$]?([\d,]+(?:\.\d{2})?)', query)
-            if salary_match:
-                try:
-                    salario = float(salary_match.group(1).replace(',', ''))
-                    tool_results = {
-                        "tool_used": "calculate_prestaciones_sociales",
-                        "requires_user_input": True,
-                        "message": "Necesito más información para el cálculo",
-                        "salario_detectado": salario
-                    }
-                    print(f"      Salario detectado: ${salario:,.2f}")
-                except:
-                    pass
+            # Extraer valores si están en la consulta - múltiples patrones de números
+            # Patrón 1: $2500000 (con o sin comas)
+            salary_patterns = [
+                r'\$\s*([\d,\.]+)',  # $2500000 o $2,500,000 o $2500000.00
+                r'salario\s+(?:de\s+)?\$?([\d,\.]+)',  # salario de 2500000
+                r'([\d,\.]+)\s*(?:pesos|COP)',  # 2500000 pesos o COP
+            ]
+            
+            salary_detected = None
+            for pattern in salary_patterns:
+                salary_match = re.search(pattern, query, re.IGNORECASE)
+                if salary_match:
+                    try:
+                        # Limpiar: quitar $ y espacios, reemplazar comas por nada
+                        raw_value = salary_match.group(1).strip()
+                        raw_value = raw_value.replace('.', '').replace(',', '')
+                        salary_detected = float(raw_value)
+                        print(f"      ✓ Salario detectado: ${salary_detected:,.2f}")
+                        break
+                    except Exception as e:
+                        print(f"      ⚠️ Error parsing salary: {e}")
+                        continue
+            
+            # Crear tool_results incluso si no encontramos salario exacto (puede venir después)
+            tool_results = {
+                "tool_used": "calculate_prestaciones_sociales",
+                "requires_user_input": True,
+                "message": "Necesito más información para el cálculo",
+            }
+            if salary_detected:
+                tool_results["salario_detectado"] = salary_detected
+                print(f"      ✓ Tool creada con salario: {salary_detected}")
     
     # 2. HERRAMIENTA: extract_specific_article
     # Detectar consultas sobre artículos específicos (ej: "artículo 5 de la ley 1010", "artículo 2 del decreto 1072")
@@ -348,7 +366,11 @@ def retrieve_node(state: RAGState) -> RAGState:
         vectorstore = load_chroma_index(persist_dir, embedding_fn, collection_name)
         
         # Determinar número de documentos a recuperar según clasificación
-        k = 5 if classification == "legal_specific" else 3
+        # Selección dinámica de `k` utilizando un LLM (Groq) implementado en `select_dynamic_k`
+        from src.tools import select_dynamic_k
+        k = select_dynamic_k(query, classification, tool_results, min_k=1, max_k=10)
+        # Guardar k elegido para trazabilidad y UI
+        state.setdefault("metadata", {})["retrieval_k"] = k
         
         # EJECUTAR HERRAMIENTAS ESPECIALIZADAS
         documents = []
@@ -961,61 +983,160 @@ def verify_node(state: RAGState) -> RAGState:
     answer = state.get("answer", "")
     documents = state.get("documents", [])
     query = state["query"]
-    
-    print(f"\n✅ VERIFICANDO RESPUESTA")
-    
+
+    print(f"\n✅ VERIFICANDO RESPUESTA (detallado)")
+
     verification = {
         "has_answer": len(answer) > 0,
         "answer_length": len(answer),
         "num_sources": len(documents),
         "quality_score": 0.0,
+        "supported_by_context": None,
+        "unsupported_claims": [],
+        "coherence_score": None,
+        "completeness_score": None,
+        "recommended_action": "accept",
     }
-    
-    try:
-        llm = init_gemini_llm()
-        
-        # Verificación de calidad
-        verification_prompt = f"""Evalúa la calidad de esta respuesta sobre normativa laboral colombiana.
 
-Pregunta: {query}
-Respuesta: {answer}
+    max_retries = 1
+    attempt = 0
 
-Evalúa según estos criterios (responde con un número de 0 a 100):
-1. ¿La respuesta es relevante para la pregunta?
-2. ¿La respuesta está basada en información legal válida?
-3. ¿La respuesta es clara y comprensible?
-4. ¿La respuesta cita fuentes específicas cuando es apropiado?
+    # Construir extracto de contexto (limitado) para verificación
+    context_pieces = []
+    for i, doc in enumerate(documents[:5], 1):
+        content = doc.page_content
+        if len(content) > 1500:
+            content = content[:1500] + "..."
+        doc_id = doc.metadata.get("id_documento", f"doc_{i}")
+        context_pieces.append(f"Documento {i} ({doc_id}):\n{content}")
+    context_excerpt = "\n\n---\n\n".join(context_pieces) if context_pieces else "(sin contexto)"
 
-Responde SOLO con un número del 0 al 100 que represente la calidad general:"""
-
-        response = llm.invoke(verification_prompt)
+    while True:
+        attempt += 1
         try:
-            quality_score = float(response.content.strip()) / 100.0
+            llm = init_gemini_llm()
+
+            verify_prompt = f"""Eres un verificador moderado en derecho laboral. Tu objetivo es evaluar si la respuesta es correcta, útil y está bien soportada.
+
+Devuelve UNICAMENTE un JSON estricto (sin explicaciones)
+con las siguientes claves:
+ - supported_by_context: booleano
+ - unsupported_claims: lista de frases (puede estar vacía)
+ - coherence_score: entero 0-100
+ - completeness_score: entero 0-100 (¿la respuesta cumple con lo pedido?)
+ - recommended_action: una de ["accept","regenerate","ask_clarification"]
+
+Contexto (fragmentos extraídos):
+{context_excerpt}
+
+Respuesta generada:
+{answer}
+
+Pregunta original:
+{query}
+
+Instrucciones para el verificador (NO incluir en la salida):
+ • Sé JUSTO pero EXIGENTE: evalúa si la respuesta está bien soportada en el contexto.
+ • Si hay afirmaciones no soportadas o contradictoras, inclúyelas en 'unsupported_claims'.
+ • completeness_score: evalúa si la respuesta responde completamente la pregunta. 60+ es bueno, <50 puede requerir regeneración.
+ • supported_by_context debe ser false si hay afirmaciones no respaldadas.
+ • Si la respuesta es INCOMPLETA o tiene ERRORES LEGALES, recomienda 'regenerate'.
+ • Regenera solo si la calidad es claramente mejorable.
+ Responde SOLO con JSON válido."""
+
+            response = llm.invoke(verify_prompt)
+            content = response.content.strip()
+
+            import json
+            try:
+                parsed = json.loads(content)
+            except Exception:
+                # Intentar limpiar texto y extraer JSON entre llaves
+                import re
+                m = re.search(r"(\{.*\})", content, re.DOTALL)
+                if m:
+                    try:
+                        parsed = json.loads(m.group(1))
+                    except Exception as e:
+                        raise e
+                else:
+                    raise ValueError("No se pudo parsear JSON de la respuesta de verificación")
+
+            # Normalizar y guardar en verification
+            verification["supported_by_context"] = bool(parsed.get("supported_by_context"))
+            verification["unsupported_claims"] = parsed.get("unsupported_claims", []) or []
+            verification["coherence_score"] = int(parsed.get("coherence_score") or 0)
+            verification["completeness_score"] = int(parsed.get("completeness_score") or 0)
+            verification["recommended_action"] = parsed.get("recommended_action", "accept")
+            verification["verification_method"] = "gemini_json"
+
+            # Derivar quality_score a partir de coherence/completeness y soporte
+            coherence = verification["coherence_score"] / 100.0
+            completeness = verification["completeness_score"] / 100.0
+            support = 1.0 if verification["supported_by_context"] else 0.0
+
+            # Ponderación balanceada: soporte y coherencia importantes, completitud también
+            quality_score = (0.35 * support) + (0.35 * coherence) + (0.3 * completeness)
             quality_score = max(0.0, min(1.0, quality_score))
-        except:
-            quality_score = 0.7 if len(answer) > 100 else 0.5
-        
-        verification["quality_score"] = quality_score
-        verification["verification_method"] = "gemini"
-        
-        # Categorizar calidad
-        if quality_score >= 0.8:
-            verification["quality_level"] = "excellent"
-            print(f"   ✓ Calidad: Excelente ({quality_score:.2%})")
-        elif quality_score >= 0.6:
-            verification["quality_level"] = "good"
-            print(f"   ✓ Calidad: Buena ({quality_score:.2%})")
-        else:
+            verification["quality_score"] = quality_score
+
+            # Clasificar (umbrales moderados)
+            if quality_score >= 0.72:
+                verification["quality_level"] = "excellent"
+            elif quality_score >= 0.55:
+                verification["quality_level"] = "good"
+            elif quality_score >= 0.35:
+                verification["quality_level"] = "needs_improvement"
+            else:
+                verification["quality_level"] = "poor"
+
+            print(f"   ✓ Verificación: nivel={verification['quality_level']} score={quality_score:.2%} (intento {attempt})")
+
+            # Acción recomendada: regenerar si el verificador lo pide y aún quedan intentos
+            # Decide si regenerar: respetar la recomendación del verificador y permitir regeneración en casos claros
+            should_regenerate = False
+            if verification["recommended_action"] == "regenerate":
+                # Regenerar si la calidad es baja (<0.55) o hay afirmaciones no soportadas significativas
+                unsupported_count = len(verification.get("unsupported_claims", []) or [])
+                if quality_score < 0.55 or (unsupported_count > 0 and quality_score < 0.65):
+                    should_regenerate = True
+
+            if should_regenerate and attempt <= max_retries:
+                print(f"   🔁 Verificador recomienda regenerar (intento {attempt}/{max_retries}). Regenerando respuesta...")
+                # Incrementar contador de regeneraciones en metadata
+                reg_attempts = state.get("metadata", {}).get("regeneration_attempts", 0)
+                state.setdefault("metadata", {})["regeneration_attempts"] = reg_attempts + 1
+
+                # Llamar a generate_node para regenerar
+                state = generate_node(state)
+                # Actualizar answer y documents desde estado regenerado
+                answer = state.get("answer", "")
+                documents = state.get("documents", [])
+                # reconstruir context_excerpt con nuevos documentos
+                context_pieces = []
+                for i, doc in enumerate(documents[:5], 1):
+                    content = doc.page_content
+                    if len(content) > 1500:
+                        content = content[:1500] + "..."
+                    doc_id = doc.metadata.get("id_documento", f"doc_{i}")
+                    context_pieces.append(f"Documento {i} ({doc_id}):\n{content}")
+                context_excerpt = "\n\n---\n\n".join(context_pieces) if context_pieces else "(sin contexto)"
+                # Volver a intentar verificación
+                continue
+
+            # Si no pide regenerar o no quedan intentos, guardar y salir
+            break
+
+        except Exception as e:
+            print(f"   ⚠️ Error en verificación detallada: {e}")
+            # Fallback ligero: marcar score medio y aceptar parcialmente
+            verification["verification_error"] = str(e)
+            verification["quality_score"] = 0.5
             verification["quality_level"] = "needs_improvement"
-            print(f"   ⚠️ Calidad: Necesita mejorar ({quality_score:.2%})")
-        
-    except Exception as e:
-        print(f"   ⚠️ Error en verificación: {e}")
-        verification["verification_error"] = str(e)
-        verification["quality_score"] = 0.5
-    
+            verification["recommended_action"] = "accept"
+            break
+
     state["verification"] = verification
-    
     return state
 
 

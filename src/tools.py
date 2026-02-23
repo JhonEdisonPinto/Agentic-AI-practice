@@ -6,6 +6,7 @@ from typing import List, Dict, Optional
 from langchain_core.tools import tool
 from langchain_core.documents import Document
 import re
+from src.config import init_groq_llm
 
 
 @tool
@@ -217,6 +218,54 @@ def extract_specific_article(doc_id: str, article_number: str, vectorstore) -> O
                     return content
     
     return None
+
+
+def select_dynamic_k(query: str, classification: str, tool_results: Optional[Dict] = None, min_k: int = 1, max_k: int = 10) -> int:
+    """
+    Selecciona dinámicamente el número de vecinos `k` usando un LLM (Groq por defecto).
+
+    Devuelve un entero entre `min_k` y `max_k`. Si falla la llamada al LLM, aplica
+    una estrategia de fallback simple.
+    """
+    try:
+        llm = init_groq_llm()
+
+        tool_used = tool_results.get("tool_used") if tool_results else "None"
+        prompt = f"""Determina cuántos documentos (k) deben recuperarse para una consulta.
+Responde SOLO con un número entero entre {min_k} y {max_k} (sin texto adicional).
+
+Consulta: "{query}"
+Clasificación: {classification}
+Herramienta detectada: {tool_used}
+
+Consideraciones (no escribirlas en la respuesta):
+- Si la consulta pide un documento específico o un artículo concreto, devolver 3.
+- Si pide resumen de un documento, devolver entre 1 y 3.
+- Para comparaciones o búsquedas generales amplias, 5-10 puede ser apropiado.
+- Para cálculos, 1-3 suele bastar.
+"""
+
+        response = llm.invoke(prompt)
+        content = response.content.strip()
+
+        # Extraer primer entero del texto de salida
+        m = re.search(r"(\d+)", content)
+        if m:
+            k = int(m.group(1))
+            k = max(min_k, min(max_k, k))
+            print(f"   ℹ️ select_dynamic_k: LLM sugirió k={k}")
+            return k
+        else:
+            raise ValueError("No se encontró entero en la respuesta del LLM")
+
+    except Exception as e:
+        print(f"   ⚠️ select_dynamic_k falló: {e} — aplicando fallback")
+        # Fallback simple
+        if classification == "legal_specific":
+            return 5
+        if classification == "calculation":
+            return 2
+        return 3
 
 
 @tool

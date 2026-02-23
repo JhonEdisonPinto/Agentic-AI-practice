@@ -126,6 +126,19 @@ def display_response(result: Dict[str, Any]):
         
         emoji = quality_emojis.get(quality_level, "❓")
         st.write(f"**Calidad:** {emoji} {quality_level.replace('_', ' ').title()} ({quality_score:.0%})")
+        # Detalles de verificación extendida
+        supported = verification.get("supported_by_context")
+        if supported is not None:
+            st.write(f"**Soportada por contexto:** {'✅ Sí' if supported else '❌ No'}")
+
+        unsupported_claims = verification.get("unsupported_claims", []) or []
+        if unsupported_claims:
+            st.write(f"**Afirmaciones no soportadas:** {len(unsupported_claims)}")
+            with st.expander("Ver afirmaciones no soportadas"):
+                for c in unsupported_claims:
+                    st.write(f"- {c}")
+
+        st.write(f"**Acción recomendada por verificador:** {verification.get('recommended_action', 'N/A')}")
         
     with col2:
         st.subheader("📚 Documentos Consultados")
@@ -147,6 +160,19 @@ def display_response(result: Dict[str, Any]):
                 st.write(f"  └─ {info['tipo']} - {info['año']}")
         else:
             st.info("No se recuperaron documentos específicos")
+    
+    # Mostrar metadatos de recuperación y regeneraciones
+    with st.container():
+        md = result.get("metadata", {})
+        retrieval_k = md.get("retrieval_k")
+        regen = md.get("regeneration_attempts", 0)
+        used_filter = md.get("used_filter", False)
+        st.markdown("---")
+        st.subheader("⚙️ Meta")
+        if retrieval_k is not None:
+            st.write(f"**k de recuperación:** {retrieval_k}")
+        st.write(f"**Filtro usado en recuperación:** {'✅' if used_filter else '➖'}")
+        st.write(f"**Intentos de regeneración:** {regen}")
     
     # Expandible con detalles técnicos
     with st.expander("🔍 Ver detalles técnicos"):
