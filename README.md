@@ -153,6 +153,7 @@ Agentic-AI-practice/
 ├── index_pdfs.py           # Script de indexación completa
 ├── quick_index.py          # Script de indexación rápida
 ├── test_*.py               # Scripts de prueba
+├── PRUEBASCODIGO.ipynb     # 📓 Notebook interactivo con pruebas completas
 ├── requirements.txt        # Dependencias Python
 ├── .env.example            # Plantilla de configuración
 └── README.md               # Este archivo
@@ -270,6 +271,10 @@ Usuario → Classify → Tool Calling → Retrieve → Generate → Verify → R
 
 ## 🧪 Testing
 
+> 📓 **Las pruebas interactivas completas están en `PRUEBASCODIGO.ipynb`** - Jupyter Notebook con ejemplos detallados, visualización de resultados y debugging paso a paso.
+
+### Scripts de prueba CLI
+
 ```bash
 # Test de embeddings
 python test_embeddings_free.py
@@ -285,6 +290,16 @@ python test_rag_graph.py
 
 # Test interactivo
 python test_rag_graph.py interactive
+```
+
+### Ejecutar PRUEBASCODIGO.ipynb
+
+```bash
+# Con Jupyter
+jupyter notebook PRUEBASCODIGO.ipynb
+
+# O con VS Code
+# Abre el archivo y ejecuta las celdas manualmente
 ```
 
 ## 📚 Documentación Adicional
