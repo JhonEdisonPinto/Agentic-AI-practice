@@ -2,6 +2,9 @@
 Aplicación Streamlit para el RAG de Normativa Laboral Colombiana.
 Sistema de consulta inteligente con LangGraph y ChromaDB.
 """
+# Capa de presentación exclusivamente. Toda la lógica RAG se delega a
+# build_graph() + graph.invoke(). Este archivo no accede directamente
+# a ChromaDB, embeddings ni LLMs.
 import streamlit as st
 import time
 from typing import Dict, Any
@@ -12,6 +15,8 @@ from src.graph import build_graph
 
 
 # Configuración de la página
+# Debe ser la primera llamada a st.* del script; cualquier otra llamada
+# previa lanza StreamlitAPIException.
 st.set_page_config(
     page_title="RAG Normativa Laboral Colombiana",
     page_icon="⚖️",
@@ -22,6 +27,9 @@ st.set_page_config(
 
 def check_database():
     """Verifica si existe la base de datos ChromaDB."""
+    # Verificación superficial: comprueba existencia del directorio y que no esté vacío.
+    # No valida integridad de la colección ni que haya chunks indexados.
+
     chroma_dir = Path("./data/chroma")
     return chroma_dir.exists() and any(chroma_dir.glob("*"))
 
@@ -29,6 +37,9 @@ def check_database():
 def initialize_session_state():
     """Inicializa el estado de la sesión."""
     # Verificar base de datos
+    # Secuencia de arranque: 1) verificar DB → 2) construir grafo → 3) inicializar historial.
+    # Si la DB no existe, st.stop() bloquea la app completa antes de cualquier render.
+
     if not check_database():
         st.error("❌ Base de datos no encontrada")
         st.info("""
@@ -47,10 +58,14 @@ def initialize_session_state():
         """)
         st.stop()
     
+    # El grafo se construye una sola vez por sesión de navegador y se reutiliza
+    # en cada consulta. load_settings() debe ejecutarse antes para que las
+    # API keys estén disponibles cuando build_graph() las necesite.
     if "graph" not in st.session_state:
         with st.spinner("🔨 Construyendo grafo RAG..."):
             st.session_state.graph = build_graph()
     
+    # Historial en memoria: crece sin límite durante la sesión, no se persiste a disco.
     if "history" not in st.session_state:
         st.session_state.history = []
 
@@ -75,7 +90,10 @@ def display_sidebar():
 
 def display_response(result: Dict[str, Any]):
     """Muestra la respuesta del RAG de manera estructurada."""
-    
+    # Renderiza el RAGState completo tras una ejecución exitosa.
+    # Estructura: respuesta principal → columna proceso + columna documentos
+    #             → metadatos de recuperación → JSON técnico expandible.
+
     # Respuesta principal
     st.subheader("💬 Respuesta")
     answer = result.get("answer", "No se pudo generar una respuesta.")
@@ -90,6 +108,8 @@ def display_response(result: Dict[str, Any]):
         st.subheader("📊 Información del Proceso")
         
         # Clasificación
+        # Mapeo de clasificaciones internas del classify_node a etiquetas legibles.
+        # Valores no mapeados se muestran en crudo sin romper el render.
         classification = result.get("classification", "N/A")
         classification_labels = {
             "legal_specific": "🏛️ Normativa específica",
@@ -131,6 +151,8 @@ def display_response(result: Dict[str, Any]):
         if supported is not None:
             st.write(f"**Soportada por contexto:** {'✅ Sí' if supported else '❌ No'}")
 
+        # "or []" protege contra None: verify_node puede omitir la clave
+        # en lugar de devolver lista vacía.
         unsupported_claims = verification.get("unsupported_claims", []) or []
         if unsupported_claims:
             st.write(f"**Afirmaciones no soportadas:** {len(unsupported_claims)}")
@@ -146,6 +168,8 @@ def display_response(result: Dict[str, Any]):
         documents = result.get("documents", [])
         if documents:
             # Obtener documentos únicos
+            # Deduplicación por id_documento: múltiples chunks del mismo documento
+            # son habituales tras similarity_search. Se muestran máximo 5 documentos únicos.
             unique_docs = {}
             for doc in documents:
                 doc_id = doc.metadata.get("id_documento", "N/A")
@@ -162,6 +186,8 @@ def display_response(result: Dict[str, Any]):
             st.info("No se recuperaron documentos específicos")
     
     # Mostrar metadatos de recuperación y regeneraciones
+    # Trazabilidad del pipeline: k de recuperación, si se aplicó filtro de metadata
+    # y número de reintentos de generación disparados por verify_node.
     with st.container():
         md = result.get("metadata", {})
         retrieval_k = md.get("retrieval_k")
@@ -270,6 +296,8 @@ def main():
         with col2:
             clear = st.button("🗑️ Limpiar", use_container_width=True)
         
+        # st.rerun() re-ejecuta el script completo pero NO destruye session_state;
+        # el grafo y el historial se conservan, solo se limpia el área de resultados visible.
         if clear:
             st.rerun()
         
@@ -288,6 +316,8 @@ def main():
                     time.sleep(0.5)
                     
                     # Ejecutar el grafo
+                    # Estructura inicial del RAGState. Cada campo vacío será populado por su nodo:
+                    # classify → tool_calling → retrieve → generate → verify.
                     initial_state = {
                         "query": user_query,
                         "classification": "",
@@ -321,6 +351,9 @@ def main():
                     "quality": result.get("verification", {}).get("quality_level")
                 })
                 
+            # st.exception() expone el traceback completo al usuario.
+            # En producción, reemplazar por mensaje genérico para evitar filtrar
+            # rutas internas o fragmentos de API keys.
             except Exception as e:
                 st.error(f"❌ Error al procesar la consulta: {str(e)}")
                 st.exception(e)
@@ -329,6 +362,9 @@ def main():
             st.warning("⚠️ Por favor, escribe una consulta antes de enviar.")
         
         # Mostrar historial si existe
+        # Solo se persiste metadata mínima (query, timestamp, clasificación, calidad).
+        # La respuesta completa y los documentos no se almacenan en historial.
+        # La lista crece sin límite en memoria; la UI muestra únicamente las últimas 5.
         if st.session_state.history:
             st.markdown("---")
             with st.expander("📜 Historial de consultas"):

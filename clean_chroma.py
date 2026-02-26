@@ -23,6 +23,8 @@ print(f"\n⚠️  ADVERTENCIA: Esto borrará toda la base de datos en:")
 print(f"   {persist_dir}")
 print(f"   Colección: {collection_name}")
 
+# Acepta "si" y "Si" (.upper() normaliza), pero rechaza "sí" con tilde
+# porque .upper() de "sí" produce "SÍ", que no coincide con "SI".
 respuesta = input("\n¿Continuar? (escribe 'SI' para confirmar): ")
 
 if respuesta.strip().upper() != "SI":
@@ -32,6 +34,8 @@ if respuesta.strip().upper() != "SI":
 
 try:
     # Opción 1: Borrar solo la colección
+    # Doble eliminación: primero la colección vía API, luego el directorio completo.
+    # delete_collection sirve como limpieza lógica si rmtree fallara parcialmente.
     print("\n🗑️  Eliminando colección...")
     client = chromadb.PersistentClient(path=persist_dir)
     
@@ -42,6 +46,8 @@ try:
         print(f"   • Colección no existía o error: {e}")
     
     # Opción 2: Borrar todo el directorio (más seguro)
+    # Elimina recursivamente todo ./data/chroma
+    # (SQLite, Parquet, WAL). No genera respaldo.
     print(f"\n🗑️  Eliminando directorio completo...")
     shutil.rmtree(persist_dir)
     print(f"   ✓ Directorio {persist_dir} eliminado")

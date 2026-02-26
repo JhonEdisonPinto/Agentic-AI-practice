@@ -1,6 +1,9 @@
 """
 Script simple para verificar ChromaDB sin cargar embeddings.
 """
+# Script de diagnóstico de solo lectura. Usa el cliente nativo de ChromaDB
+# en lugar del wrapper de LangChain para evitar inicializar embeddings.
+# No forma parte del pipeline RAG; se ejecuta manualmente post-indexación o ante fallos.
 import chromadb
 from pathlib import Path
 
@@ -17,6 +20,7 @@ if not Path(persist_dir).exists():
     exit(1)
 
 # Conectar a ChromaDB
+# Acceso directo al almacenamiento en disco (SQLite + Parquet) sin necesidad de embeddings.
 client = chromadb.PersistentClient(path=persist_dir)
 
 # Obtener la colección
@@ -29,7 +33,9 @@ try:
     print(f"   • Total de chunks: {count}")
     
     if count > 0:
-        # Obtener TODOS los metadatos (no solo 1000)
+        # Obtener TODOS los metadatos.
+        # limit=count fuerza la recuperación completa; el default de ChromaDB es ~1000.
+        # include=['metadatas'] omite vectores y contenido textual para minimizar uso de memoria.
         print(f"\n⏳ Obteniendo todos los metadatos ({count} chunks)...")
         results = collection.get(
             limit=count,  # Obtener TODOS los chunks
@@ -71,7 +77,9 @@ try:
             print(f"\n✅ Corpus completo!")
     else:
         print("\n⚠️  Base de datos vacía")
-        
+
+# get_collection lanza ValueError si la colección no existe, lo que indica
+# que index_pdfs.py no se ha ejecutado o falló antes de crear la colección.
 except Exception as e:
     print(f"\n❌ ERROR: {e}")
     print("\nLa colección no existe. Ejecuta: python index_pdfs.py")

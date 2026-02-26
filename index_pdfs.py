@@ -1,6 +1,8 @@
 """
 Script para indexar todos los PDFs de normativa laboral en ChromaDB.
 Procesa los documentos, los divide en chunks y los almacena con embeddings.
+Pipeline: PDF → páginas → chunks → embeddings → ChromaDB.
+Ejecución manual única; re-ejecutar sin limpiar con clean_chroma.py puede duplicar datos.
 """
 import os
 import re
@@ -25,6 +27,9 @@ def extract_metadata_from_filename(filename: str) -> Dict[str, str]:
     - DECRETO 1072 DE 2015.pdf -> tipo: DECRETO, numero: 1072, año: 2015
     - C-051 de 1995.pdf -> tipo: SENTENCIA, numero: C-051, año: 1995
     """
+    # 3 patrones evaluados en orden; el primer match retorna inmediatamente.
+    # Nombres no reconocidos caen en fallback como "DOCUMENTO" sin año ni número,
+    # lo que los hace invisibles para tools que filtran por tipo_documento.
     metadata = {
         "filename": filename,
         "source": filename,
@@ -40,6 +45,8 @@ def extract_metadata_from_filename(filename: str) -> Dict[str, str]:
         return metadata
     
     # Patrón para Sentencias: "C-051 de 1995"
+    # Solo reconoce sentencias C-xxx y T-xxx; otros prefijos (SU, A) no se capturan.
+    # El guión se omite en id_documento: "C-051" → "SENTENCIA_C051_1995".
     match = re.match(r"([CT])-(\d+)\s+de\s+(\d{4})", filename, re.IGNORECASE)
     if match:
         metadata["tipo_documento"] = "SENTENCIA"
@@ -75,6 +82,8 @@ def load_pdf_documents(corpus_path: str) -> List[Document]:
             pages = loader.load()
             
             # Extraer metadata del nombre del archivo
+            # La metadata extraída del nombre se propaga uniformemente
+            # a todas las páginas del documento (no varía por página).
             file_metadata = extract_metadata_from_filename(pdf_path.name)
             
             # Agregar metadata a cada página
@@ -86,6 +95,7 @@ def load_pdf_documents(corpus_path: str) -> List[Document]:
             all_documents.extend(pages)
             print(f"   ✓ {len(pages)} páginas cargadas")
             
+        # PDFs corruptos o protegidos se saltan sin detener el pipeline.
         except Exception as e:
             print(f"   ✗ Error al cargar {pdf_path.name}: {e}")
             continue
@@ -99,6 +109,10 @@ def split_documents(documents: List[Document]) -> List[Document]:
     Divide los documentos en chunks más pequeños para mejor recuperación.
     """
     print("\n✂️  Dividiendo documentos en chunks...")
+
+    # chunk_size=2000, overlap=500 (25%). Separadores en orden de preferencia:
+    # párrafo → línea → oración → palabra → carácter.
+    # La metadata de cada página se hereda automáticamente a sus chunks.
     
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=2000,  # Tamaño del chunk en caracteres
@@ -137,6 +151,9 @@ def index_documents(chunks: List[Document], persist_dir: str, collection_name: s
     print("   ✓ Vectorstore creado")
     
     # Agregar documentos en batches
+    # Batches de 50 chunks. Cada add_texts genera embeddings e inserta en ChromaDB.
+    # IDs secuenciales globales ("chunk_0", "chunk_1"...); si el corpus no cambia
+    # de tamaño, re-ejecutar sobreescribe por upsert implícito en lugar de duplicar.
     print("\n   Agregando documentos...")
     batch_size = 50
     total_batches = (len(chunks) + batch_size - 1) // batch_size
@@ -202,6 +219,7 @@ def main():
     load_settings()
     
     corpus_path = "src/corpus"
+    # Lee rutas desde .env; los defaults coinciden con los del resto del sistema.
     persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
     collection_name = os.getenv("CHROMA_COLLECTION_NAME", "normativa_laboral")
     
@@ -218,6 +236,8 @@ def main():
         return
     
     # Estadísticas
+    # Conteo por tipo_documento a nivel de página, no de documento único.
+    # Un PDF de 50 páginas suma 50 al conteo de su tipo.
     tipos = {}
     for doc in documents:
         tipo = doc.metadata.get("tipo_documento", "DESCONOCIDO")

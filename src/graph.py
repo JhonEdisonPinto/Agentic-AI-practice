@@ -1,6 +1,8 @@
 """
 LangGraph workflow para RAG de normativa laboral colombiana.
 
+Cada nodo es una etapa del pipeline; el estado RAGState fluye entre ellos sin ramificaciones condicionales.
+
 Flujo:
 1. Classify: Clasifica la consulta del usuario
 2. Retrieve: Recupera documentos relevantes de ChromaDB
@@ -20,7 +22,9 @@ import re
 
 
 class RAGState(TypedDict):
-    """Estado compartido entre todos los nodos del grafo."""
+    # Estado compartido e inmutable entre nodos. LangGraph lo pasa por referencia entre ejecuciones.
+    # tool_results actúa como canal de comunicación entre tool_calling y retrieve/generate.
+    # metadata acumula trazabilidad (modelo usado, scores, errores) sin afectar el flujo principal.
     query: str  # Consulta original del usuario
     classification: str  # Clasificación de la consulta
     documents: List[Document]  # Documentos recuperados
@@ -63,7 +67,8 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
         response = llm.invoke(classification_prompt)
         classification = response.content.strip().lower()
         
-        # Validar clasificación
+        # Si el LLM devuelve una categoría no reconocida (alucinación o formato inesperado),
+        # se fuerza a "general" para evitar que el resto del pipeline quede en estado inválido.
         valid_classifications = ["legal_specific", "procedural", "general", "calculation", "resume"]
         if classification not in valid_classifications:
             classification = "general"
@@ -73,6 +78,9 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
     except Exception as e:
         print(f"   ⚠️ Error en clasificación (usando clasificación simple): {str(e)[:100]}")
         # Clasificación simple basada en palabras clave
+        # Fallback por keywords cuando Gemini falla o no está disponible.
+        # El orden de los condicionales importa: "calculation" y "resume" se evalúan antes
+        # que "legal_specific" para evitar colisiones con palabras como "ley" en contextos de cálculo.
         query_lower = query.lower()
         if any(word in query_lower for word in ["calcular", "liquidar", "cuánto", "pagar"]):
             classification = "calculation"
@@ -101,11 +109,17 @@ def tool_calling_node(state: RAGState) -> RAGState:
     classification = state.get("classification", "general")
     
     print(f"\n🔧 EVALUANDO HERRAMIENTAS ESPECIALIZADAS")
+    # Actúa como router basado en patrones regex, no en LLM.
+    # La evaluación es en cascada con guardias `if not tool_results`:
+    # solo una herramienta puede ser seleccionada por consulta.
+    # El orden de evaluación define la prioridad implícita entre herramientas.
     
     tool_results = None
     
     # 0. HERRAMIENTA: resume_document (PRIORIDAD: Detectar primero para evitar confusiones)
     # Detectar consultas que requieren resumen de documento
+    # Se evalúa primero para evitar que "resumen de la ley 1010" sea capturado
+    # por search_by_document_type, que usa el mismo regex de LEY/DECRETO.
     if classification == "resume":
         doc_type = None
         doc_number = None
@@ -201,6 +215,8 @@ def tool_calling_node(state: RAGState) -> RAGState:
                         continue
             
             # Crear tool_results incluso si no encontramos salario exacto (puede venir después)
+            # Si no se detecta salario en la consulta, tool_results se crea igualmente con requires_user_input=True.
+            # Esto permite que generate_node solicite la información faltante al usuario en vez de fallar.
             tool_results = {
                 "tool_used": "calculate_prestaciones_sociales",
                 "requires_user_input": True,
@@ -301,6 +317,8 @@ def tool_calling_node(state: RAGState) -> RAGState:
             }
     
     # Patrón 2: SENTENCIA (formato C-200, T-1234, etc.)
+    # Corre separado del Patrón 1 porque las sentencias tienen formato diferente (C-200, T-1234)
+    # y no son capturadas por el regex de LEY/DECRETO.
     if not tool_results:
         sentencia_match = re.search(r'sentencia\s+([CT])-?(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
         if sentencia_match:
@@ -367,9 +385,12 @@ def retrieve_node(state: RAGState) -> RAGState:
         
         # Determinar número de documentos a recuperar según clasificación
         # Selección dinámica de `k` utilizando un LLM (Groq) implementado en `select_dynamic_k`
+        # k no es fijo: se delega a select_dynamic_k (Groq) para ajustarlo según complejidad de la consulta.
+        # Esto balancea precisión (k pequeño para artículos específicos) vs. cobertura (k alto para resúmenes).
+                
         from src.tools import select_dynamic_k
         k = select_dynamic_k(query, classification, tool_results, min_k=1, max_k=10)
-        # Guardar k elegido para trazabilidad y UI
+        # El valor se guarda en metadata para trazabilidad desde la UI de Streamlit.
         state.setdefault("metadata", {})["retrieval_k"] = k
         
         # EJECUTAR HERRAMIENTAS ESPECIALIZADAS
@@ -411,6 +432,9 @@ def retrieve_node(state: RAGState) -> RAGState:
                     print(f"      ⚠️ Artículo {article_number} no encontrado en {doc_id}")
                     # Para extracción de artículos, si no se encuentra, devolver mensaje
                     # NO hacer búsqueda genérica porque el usuario pidió algo específico
+                    # Se crea un Document de error en lugar de hacer búsqueda genérica.
+                    # Decisión deliberada: si el usuario pidió un artículo específico, una respuesta genérica
+                    # sería semánticamente incorrecta aunque devuelva texto relacionado.
                     doc = Document(
                         page_content=f"No se pudo encontrar el Artículo {article_number} en {doc_id}. El formato del artículo en el documento puede ser diferente o el artículo puede no existir en la base de datos.",
                         metadata={
@@ -440,8 +464,8 @@ def retrieve_node(state: RAGState) -> RAGState:
                     "vectorstore": vectorstore
                 })
                 
-                # Guardar resultado de comparación en tool_results para usarlo en generate
-                state["tool_results"]["comparison_result"] = comparison_result
+                # El resultado de la comparación se inyecta de vuelta en state["tool_results"]
+                # para que generate_node pueda construir el prompt con metadatos de ambos documentos.                state["tool_results"]["comparison_result"] = comparison_result
                 print(f"      ✓ Comparación completada")
                 print(f"         Doc1: {comparison_result['documento1']['fragmentos_encontrados']} fragmentos")
                 print(f"         Doc2: {comparison_result['documento2']['fragmentos_encontrados']} fragmentos")
@@ -574,6 +598,9 @@ def retrieve_node(state: RAGState) -> RAGState:
                     )
                     
                     # Si no encontramos con el filtro exacto, intentar estrategias alternativas
+                    # Búsqueda en cascada: ID exacto → tipo+número → solo tipo.
+                    # Compensa inconsistencias en metadata de ChromaDB (documentos sin año indexado, por ejemplo).
+                    # Cada degradación amplía el scope de búsqueda, priorizando encontrar algo antes que devolver vacío.
                     if not docs_with_scores and tool_results:
                         tool_used = tool_results.get("tool_used")
                         
@@ -614,6 +641,9 @@ def retrieve_node(state: RAGState) -> RAGState:
                 scores = [score for doc, score in docs_with_scores]
         else:
             # Ya tenemos documentos de una herramienta
+            # Los documentos de herramientas no tienen score de similitud coseno.
+            # Se asigna 0.0 como placeholder para mantener la estructura homogénea del estado
+            # y evitar errores en el logging y en la UI que espera pares (doc, score).
             scores = [0.0] * len(documents)  # No hay scores si vienen de herramienta
         
         # LOGGING Y ACTUALIZACIÓN DEL ESTADO
@@ -666,6 +696,8 @@ def generate_node(state: RAGState) -> RAGState:
         is_comparison = tool_results and tool_results.get("tool_used") == "compare_documents"
         
         # Construir contexto de manera optimizada
+        # Las comparaciones duplican el volumen de contexto (dos documentos completos).
+        # Se limita a 10 docs y 1000 caracteres por fragmento para no exceder el context window de Groq/Llama.
         if is_comparison:
             # Para comparaciones, limitar documentos a los 10 más relevantes
             limited_docs = documents[:10]
@@ -743,6 +775,9 @@ def generate_node(state: RAGState) -> RAGState:
             tool_info += f"{'='*60}\n"
         
         # Prompt mejorado según clasificación y herramientas
+        # Cada herramienta activa un system_prompt distinto con instrucciones específicas.
+        # Esto es crítico: el mismo LLM necesita rol y restricciones diferentes
+        # para resumir, comparar, extraer o calcular correctamente.
         if tool_results and tool_results.get("tool_used") == "compare_documents":
             system_prompt = """Eres un experto en derecho laboral colombiano especializado en análisis comparativo.
 
@@ -902,6 +937,8 @@ Proporciona una respuesta clara y precisa basada en el contexto:"""
         sources_text += "="*60 + "\n\n"
         
         # Recolectar fuentes únicas
+        # sources_seen evita citar el mismo documento varias veces cuando k recuperó
+        # múltiples chunks del mismo archivo (comportamiento normal en RAG con chunking).
         sources_seen = set()
         sources_list = []
         
@@ -942,6 +979,8 @@ Proporciona una respuesta clara y precisa basada en el contexto:"""
     except Exception as e:
         print(f"   ⚠️ Error en generación (usando respuesta basada en documentos): {str(e)[:100]}")
         # Fallback: crear respuesta simple basada en documentos
+        # Si el LLM falla, se extrae el primer chunk directamente de ChromaDB como respuesta cruda.
+        # Se mantiene la sección de fuentes para preservar trazabilidad incluso en el caso degradado.
         if documents:
             answer = f"""Según los documentos de normativa laboral colombiana encontrados:
 
@@ -1071,6 +1110,8 @@ Instrucciones para el verificador (NO incluir en la salida):
             verification["verification_method"] = "gemini_json"
 
             # Derivar quality_score a partir de coherence/completeness y soporte
+            # Ponderación: soporte contextual (35%) + coherencia (35%) + completitud (30%).
+            # El soporte es binario (0.0 o 1.0), lo que penaliza fuerte respuestas no respaldadas en el contexto.
             coherence = verification["coherence_score"] / 100.0
             completeness = verification["completeness_score"] / 100.0
             support = 1.0 if verification["supported_by_context"] else 0.0
@@ -1081,6 +1122,8 @@ Instrucciones para el verificador (NO incluir en la salida):
             verification["quality_score"] = quality_score
 
             # Clasificar (umbrales moderados)
+            # Umbrales definidos empíricamente: ≥0.72 excellent, ≥0.55 good, ≥0.35 needs_improvement.
+            # Calibrados para dominio legal donde la precisión es más importante que la fluidez.
             if quality_score >= 0.72:
                 verification["quality_level"] = "excellent"
             elif quality_score >= 0.55:
@@ -1092,8 +1135,12 @@ Instrucciones para el verificador (NO incluir en la salida):
 
             print(f"   ✓ Verificación: nivel={verification['quality_level']} score={quality_score:.2%} (intento {attempt})")
 
-            # Acción recomendada: regenerar si el verificador lo pide y aún quedan intentos
-            # Decide si regenerar: respetar la recomendación del verificador y permitir regeneración en casos claros
+            # Acción recomendada: regenerar si el verificador lo pide y aún quedan intentos.
+            # Decide si regenerar: respetar la recomendación del verificador y permitir regeneración en casos claros.
+            # La regeneración no depende solo de recommended_action=="regenerate":
+            # también exige quality_score < 0.55 o afirmaciones no soportadas con score < 0.65.
+            # Esto evita regeneraciones innecesarias cuando el verificador es conservador.
+            # max_retries=1 limita a un solo ciclo para no degradar la latencia percibida en Streamlit.
             should_regenerate = False
             if verification["recommended_action"] == "regenerate":
                 # Regenerar si la calidad es baja (<0.55) o hay afirmaciones no soportadas significativas
@@ -1107,7 +1154,9 @@ Instrucciones para el verificador (NO incluir en la salida):
                 reg_attempts = state.get("metadata", {}).get("regeneration_attempts", 0)
                 state.setdefault("metadata", {})["regeneration_attempts"] = reg_attempts + 1
 
-                # Llamar a generate_node para regenerar
+                # Llamar a generate_node para regenerar.
+                # Se llama a generate_node directamente desde verify_node en vez de redirigir el grafo.
+                # Esto simplifica la arquitectura (grafo lineal sin ciclos) a costa de acoplamiento entre nodos.
                 state = generate_node(state)
                 # Actualizar answer y documents desde estado regenerado
                 answer = state.get("answer", "")
@@ -1129,7 +1178,9 @@ Instrucciones para el verificador (NO incluir en la salida):
 
         except Exception as e:
             print(f"   ⚠️ Error en verificación detallada: {e}")
-            # Fallback ligero: marcar score medio y aceptar parcialmente
+            # Fallback ligero: marcar score medio y aceptar parcialmente.
+            # Si Gemini falla durante la verificación, se asigna quality_score=0.5 y recommended_action="accept".
+            # Se acepta la respuesta sin verificar para no bloquear el pipeline por un fallo del verificador.
             verification["verification_error"] = str(e)
             verification["quality_score"] = 0.5
             verification["quality_level"] = "needs_improvement"
@@ -1154,6 +1205,9 @@ def build_graph():
     graph.add_node("verify", verify_node)
 
     # Definir flujo con tools
+    # El grafo es completamente lineal, sin edges condicionales.
+    # Toda la lógica de routing está encapsulada dentro de los nodos (tool_calling, retrieve).
+    # Esto simplifica el grafo pero concentra responsabilidad en los nodos intermedios.
     graph.set_entry_point("classify")
     graph.add_edge("classify", "tool_calling")
     graph.add_edge("tool_calling", "retrieve")

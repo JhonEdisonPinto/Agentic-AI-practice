@@ -2,6 +2,9 @@
 import subprocess
 import sys
 
+# Lanzador equivalente a "streamlit run app.py --server.port=8501 --server.headless=true".
+# Toda la carga del RAG ocurre dentro de app.py.
+
 if __name__ == "__main__":
     print("=" * 70)
     print("🚀 INICIANDO RAG NORMATIVA LABORAL COLOMBIANA")
@@ -13,6 +16,8 @@ if __name__ == "__main__":
     print("=" * 70)
     
     try:
+        # sys.executable garantiza el mismo intérprete/entorno virtual activo.
+        # Bloqueante: el control no retorna hasta que Streamlit termine.
         subprocess.run([
             sys.executable, "-m", "streamlit", "run", 
             "app.py",

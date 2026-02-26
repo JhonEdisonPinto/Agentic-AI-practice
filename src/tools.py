@@ -22,6 +22,10 @@ def search_by_document_type(query: str, doc_type: str, vectorstore) -> List[Docu
     Returns:
         Lista de documentos del tipo especificado
     """
+
+    # Recupera hasta 10 fragmentos por similaridad y filtra los primeros 5 que coincidan
+    # con el tipo de documento indicado. El filtrado es post-búsqueda (no usa filtros de ChromaDB),
+    # lo que implica que k=10 puede no ser suficiente si el tipo buscado es poco frecuente.
     results = vectorstore.similarity_search(query, k=10)
     
     # Filtrar por tipo de documento
@@ -47,6 +51,10 @@ def search_by_year_range(query: str, start_year: int, end_year: int, vectorstore
     Returns:
         Lista de documentos en el rango de años
     """
+
+    # Similar a search_by_document_type pero filtra por rango de años.
+    # Recupera hasta 20 fragmentos para compensar que el filtrado es post-búsqueda.
+    # Los valores de metadata "año" se convierten a int; entradas no numéricas se descartan silenciosamente.
     results = vectorstore.similarity_search(query, k=20)
     
     # Filtrar por rango de años
@@ -81,6 +89,11 @@ def calculate_prestaciones_sociales(
     Returns:
         Diccionario con el desglose de prestaciones
     """
+    # Calcula cesantías, intereses (12% anual), prima de servicios y vacaciones
+    # conforme al Código Sustantivo del Trabajo colombiano.
+    # Usa año comercial de 360 días. El parámetro años_servicio se incluye en el resultado
+    # pero no interviene en ningún cálculo; toda la base es dias_trabajados/360.
+    
     # Cálculo de cesantías (1 mes de salario por año)
     cesantias = (salario_mensual * dias_trabajados) / 360
     
@@ -120,6 +133,15 @@ def extract_specific_article(doc_id: str, article_number: str, vectorstore) -> O
     Returns:
         Contenido del artículo o None si no se encuentra
     """
+
+    # Localiza el chunk que contiene un artículo específico dentro de un documento legal.
+    # Estrategia en tres niveles de estrictez:
+    #   1. Metadata completa (tipo + número + año) con coincidencia de patrón textual.
+    #   2. Solo número de documento (ignora tipo y año) con coincidencia de patrón.
+    #   3. Sin filtro de metadata: acepta cualquier chunk que mencione el artículo
+    #      y contenga el número o tipo del documento en su texto.
+    # El tercer nivel es un fallback de último recurso ante metadata inconsistente.
+    
     # Parsear el document ID
     parts = doc_id.split("_")
     if len(parts) < 2:
@@ -146,6 +168,10 @@ def extract_specific_article(doc_id: str, article_number: str, vectorstore) -> O
     
     all_results = []
     
+    # Se generan múltiples variantes del query para cubrir diferencias tipográficas
+    # frecuentes en documentos escaneados: símbolo ordinal (º/°), abreviatura "Art.",
+    # mayúsculas/minúsculas y presencia o ausencia de punto tras el número.
+
     # Probar cada query con un k mayor para capturar más chunks
     for query in queries:
         try:
@@ -227,23 +253,30 @@ def select_dynamic_k(query: str, classification: str, tool_results: Optional[Dic
     Devuelve un entero entre `min_k` y `max_k`. Si falla la llamada al LLM, aplica
     una estrategia de fallback simple.
     """
+
+    # Función utilitaria (no expuesta como @tool) que delega en el LLM de Groq la decisión
+    # de cuántos fragmentos recuperar (k), según la query, su clasificación y la herramienta
+    # detectada. El resultado se fuerza al rango [min_k, max_k].
+    # Fallback determinista si el LLM falla o no devuelve un entero:
+    #   - "legal_specific" → k=5, "calculation" → k=2, resto → k=3.
+
     try:
         llm = init_groq_llm()
 
         tool_used = tool_results.get("tool_used") if tool_results else "None"
         prompt = f"""Determina cuántos documentos (k) deben recuperarse para una consulta.
-Responde SOLO con un número entero entre {min_k} y {max_k} (sin texto adicional).
+    Responde SOLO con un número entero entre {min_k} y {max_k} (sin texto adicional).
 
-Consulta: "{query}"
-Clasificación: {classification}
-Herramienta detectada: {tool_used}
+    Consulta: "{query}"
+    Clasificación: {classification}
+    Herramienta detectada: {tool_used}
 
-Consideraciones (no escribirlas en la respuesta):
-- Si la consulta pide un documento específico o un artículo concreto, devolver 3.
-- Si pide resumen de un documento, devolver entre 1 y 3.
-- Para comparaciones o búsquedas generales amplias, 5-10 puede ser apropiado.
-- Para cálculos, 1-3 suele bastar.
-"""
+    Consideraciones (no escribirlas en la respuesta):
+    - Si la consulta pide un documento específico o un artículo concreto, devolver 3.
+    - Si pide resumen de un documento, devolver entre 1 y 3.
+    - Para comparaciones o búsquedas generales amplias, 5-10 puede ser apropiado.
+    - Para cálculos, 1-3 suele bastar.
+    """
 
         response = llm.invoke(prompt)
         content = response.content.strip()
@@ -283,6 +316,14 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
     Returns:
         Diccionario con información comparativa (optimizada)
     """
+
+    # Compara dos documentos legales sobre un tema usando búsquedas independientes por documento.
+    # Para controlar el tamaño del contexto enviado al modelo, aplica dos límites duros:
+    #   - MAX_FRAGMENTS_PER_DOC = 5 fragmentos por documento
+    #   - MAX_CHARS_PER_FRAGMENT = 800 caracteres por fragmento
+    # La búsqueda interna (search_document) intenta tres estrategias en orden descendente
+    # de precisión: filtro por id_documento, filtro por tipo+número, y búsqueda manual con
+    # filtrado post-hoc.
     
     # Configuración optimizada
     MAX_FRAGMENTS_PER_DOC = 5  # Reducido de 10 a 5
@@ -404,6 +445,13 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
     Returns:
         Diccionario con el contenido completo del documento y metadatos para que el LLM lo resuma
     """
+
+    # Recupera todos los fragmentos disponibles de un documento para que el LLM los resuma.
+    # El contenido acumulado se limita a 15 000 caracteres (MAX_CHARS) para evitar
+    # el error 413 al invocar el modelo; los fragmentos sobrantes se truncan con aviso explícito.
+    # El campo "contenido_completo" devuelto puede estar truncado pese a su nombre,
+    # pero se incluye un aviso claro para que el LLM lo tenga en cuenta al generar el resumen.
+    
     results = []
     
     # Estrategia 1: Búsqueda con filtro de metadata por ID exacto (EFICIENTE)
