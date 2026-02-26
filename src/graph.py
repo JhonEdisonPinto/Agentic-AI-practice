@@ -129,7 +129,7 @@ HERRAMIENTAS DISPONIBLES:
    Parámetros: doc_type (LEY|DECRETO|SENTENCIA|ACTO LEGISLATIVO), doc_number (str), doc_year (str|null), doc_id (str, formato: TIPO_NUMERO o TIPO_NUMERO_AÑO)
 
 2. calculate_prestaciones_sociales — Calcular prestaciones sociales, cesantías, primas, liquidaciones.
-   Parámetros: salario_detectado (float|null)
+   Parámetros: salario_detectado (float|null), dias_trabajados (int|null), años_servicio (float|null)
 
 3. extract_specific_article — Extraer un artículo concreto de una ley o decreto.
    Parámetros: doc_type (LEY|DECRETO), doc_number (str), doc_year (str|null), doc_id (str), article_number (str)
@@ -155,6 +155,8 @@ REGLAS:
 - Para sentencias usa formato: doc_type="SENTENCIA", doc_number="C200" (prefijo+número).
 - doc_id sigue el formato: TIPO_NUMERO o TIPO_NUMERO_AÑO (ej: LEY_1010, DECRETO_36_2016, SENTENCIA_C200_2003).
 - Si detectas un salario en la consulta (ej: $2,500,000 o 2500000 pesos), extráelo como número en salario_detectado.
+- Si detectas días trabajados (ej: 30 días, 180 días), extráelos como número en dias_trabajados.
+- Si detectas años de servicio (ej: 5 años, 2.5 años), extráelos como número en años_servicio.
 - Si no se necesita ninguna herramienta, responde con tool_name "none".
 
 Clasificación actual: {classification}
@@ -202,18 +204,50 @@ Responde ÚNICAMENTE con JSON válido (sin texto adicional, sin markdown) con es
             }
         
         elif tool_name == "calculate_prestaciones_sociales":
+            # Extraer parámetros del LLM; usar defaults si no se proporcionan
             salary = params.get("salario_detectado")
+            dias = params.get("dias_trabajados")
+            años = params.get("años_servicio")
+            
+            # Defaults: contrato a término fijo, 30 días, 1 año de servicio
+            defaults_used = []
+            try:
+                salary_val = float(salary) if salary is not None else None
+            except (ValueError, TypeError):
+                salary_val = None
+            
+            try:
+                dias_val = int(dias) if dias is not None else 30
+                if dias is None:
+                    defaults_used.append("dias_trabajados=30")
+            except (ValueError, TypeError):
+                dias_val = 30
+                defaults_used.append("dias_trabajados=30")
+            
+            try:
+                años_val = float(años) if años is not None else 1.0
+                if años is None:
+                    defaults_used.append("años_servicio=1.0")
+            except (ValueError, TypeError):
+                años_val = 1.0
+                defaults_used.append("años_servicio=1.0")
+            
             tool_results = {
                 "tool_used": "calculate_prestaciones_sociales",
-                "requires_user_input": True,
-                "message": "Necesito más información para el cálculo",
+                "salario_detectado": salary_val,
+                "dias_trabajados": dias_val,
+                "años_servicio": años_val,
+                "defaults_used": defaults_used,
             }
-            if salary is not None:
-                try:
-                    tool_results["salario_detectado"] = float(salary)
-                    print(f"      ✓ Salario detectado: ${float(salary):,.2f}")
-                except (ValueError, TypeError):
-                    pass
+            
+            if salary_val is not None:
+                print(f"      ✓ Salario detectado: ${salary_val:,.2f}")
+            else:
+                print(f"      ℹ️ Salario no detectado — se usará contexto del corpus")
+            print(f"      ✓ Días trabajados: {dias_val}")
+            print(f"      ✓ Años de servicio: {años_val}")
+            if defaults_used:
+                print(f"      ℹ️ Valores por defecto aplicados: {', '.join(defaults_used)}")
         
         elif tool_name == "extract_specific_article":
             doc_type = str(params.get("doc_type", "")).upper()
@@ -318,18 +352,38 @@ def _tool_calling_fallback(query: str, classification: str):
     # calculate_prestaciones_sociales
     if not tool_results and classification == "calculation":
         if any(w in query.lower() for w in ["prestaciones", "cesantías", "prima", "liquidación"]):
-            tool_results = {
-                "tool_used": "calculate_prestaciones_sociales",
-                "requires_user_input": True,
-                "message": "Necesito más información para el cálculo",
-            }
+            defaults_used = []
+            salary_val = None
+            dias_val = 30
+            años_val = 1.0
+            
             salary_match = re.search(r'\$\s*([\d,\.]+)', query)
             if salary_match:
                 try:
                     raw = salary_match.group(1).replace('.', '').replace(',', '')
-                    tool_results["salario_detectado"] = float(raw)
+                    salary_val = float(raw)
                 except Exception:
                     pass
+            
+            dias_match = re.search(r'(\d+)\s*d[ií]as?\s*(?:de\s+)?(?:trabajo|trabajados)', query, re.IGNORECASE)
+            if dias_match:
+                dias_val = int(dias_match.group(1))
+            else:
+                defaults_used.append("dias_trabajados=30")
+            
+            años_match = re.search(r'(\d+(?:[.,]\d+)?)\s*años?\s*(?:de\s+)?servicio', query, re.IGNORECASE)
+            if años_match:
+                años_val = float(años_match.group(1).replace(',', '.'))
+            else:
+                defaults_used.append("años_servicio=1.0")
+            
+            tool_results = {
+                "tool_used": "calculate_prestaciones_sociales",
+                "salario_detectado": salary_val,
+                "dias_trabajados": dias_val,
+                "años_servicio": años_val,
+                "defaults_used": defaults_used,
+            }
     
     # extract_specific_article
     if not tool_results and classification != "resume":
@@ -575,7 +629,62 @@ def retrieve_node(state: RAGState) -> RAGState:
                 if resume_result.get("fragmentos_encontrados", 0) == 0:
                     print(f"      ⚠️ No se encontraron fragmentos en la base de datos para este documento")
             
-            # 5. Herramienta search_by_document_type - mantener búsqueda por metadata
+            # 5. Ejecutar herramienta calculate_prestaciones_sociales
+            elif tool_used == "calculate_prestaciones_sociales":
+                from src.tools import calculate_prestaciones_sociales
+                print(f"   🔧 Ejecutando: calculate_prestaciones_sociales")
+                
+                salary_val = tool_results.get("salario_detectado")
+                dias_val = tool_results.get("dias_trabajados", 30)
+                años_val = tool_results.get("años_servicio", 1.0)
+                
+                if salary_val is not None:
+                    try:
+                        calc_result = calculate_prestaciones_sociales.invoke({
+                            "salario_mensual": float(salary_val),
+                            "dias_trabajados": int(dias_val),
+                            "años_servicio": float(años_val)
+                        })
+                        state["tool_results"]["calculation_result"] = calc_result
+                        print(f"      ✓ Cálculo realizado exitosamente")
+                        print(f"         Cesantías: ${calc_result.get('cesantias', 0):,.2f}")
+                        print(f"         Prima: ${calc_result.get('prima_servicios', 0):,.2f}")
+                        print(f"         Vacaciones: ${calc_result.get('vacaciones', 0):,.2f}")
+                        print(f"         Total: ${calc_result.get('total_prestaciones', 0):,.2f}")
+                        
+                        # Crear documento con los resultados del cálculo
+                        defaults_used = tool_results.get("defaults_used", [])
+                        defaults_note = ""
+                        if defaults_used:
+                            defaults_note = f"\n\nNota: Se usaron valores por defecto para: {', '.join(defaults_used)}. "
+                            defaults_note += "Para obtener resultados más precisos, especifique: salario mensual, días trabajados y años de servicio."
+                        
+                        doc = Document(
+                            page_content=(
+                                f"Resultado del cálculo de prestaciones sociales:\n"
+                                f"- Salario mensual: ${float(salary_val):,.2f}\n"
+                                f"- Días trabajados: {dias_val}\n"
+                                f"- Años de servicio: {años_val}\n\n"
+                                f"Desglose:\n"
+                                f"- Cesantías: ${calc_result.get('cesantias', 0):,.2f}\n"
+                                f"- Intereses sobre cesantías (12%): ${calc_result.get('intereses_cesantias', 0):,.2f}\n"
+                                f"- Prima de servicios: ${calc_result.get('prima_servicios', 0):,.2f}\n"
+                                f"- Vacaciones: ${calc_result.get('vacaciones', 0):,.2f}\n"
+                                f"- TOTAL PRESTACIONES: ${calc_result.get('total_prestaciones', 0):,.2f}"
+                                f"{defaults_note}"
+                            ),
+                            metadata={
+                                "source": "calculate_prestaciones_sociales",
+                                "tipo_documento": "CÁLCULO"
+                            }
+                        )
+                        documents = [doc]
+                    except Exception as calc_error:
+                        print(f"      ⚠️ Error en cálculo: {calc_error}")
+                else:
+                    print(f"      ℹ️ Salario no disponible — se usará contexto del corpus para responder")
+            
+            # 6. Herramienta search_by_document_type - mantener búsqueda por metadata
             elif tool_used == "search_by_document_type":
                 doc_type = tool_results.get("doc_type")
                 doc_number = tool_results.get("doc_number")
@@ -765,10 +874,22 @@ def generate_node(state: RAGState) -> RAGState:
             
             elif tool_used == "calculate_prestaciones_sociales":
                 tool_info += f"\nCálculo de prestaciones sociales:\n"
-                if tool_results.get("requires_user_input"):
-                    tool_info += f"- {tool_results.get('message', 'Información incompleta')}\n"
-                    if tool_results.get('salario_detectado'):
-                        tool_info += f"- Salario detectado: ${tool_results.get('salario_detectado'):,.2f}\n"
+                if tool_results.get('salario_detectado'):
+                    tool_info += f"- Salario: ${tool_results.get('salario_detectado'):,.2f}\n"
+                tool_info += f"- Días trabajados: {tool_results.get('dias_trabajados', 30)}\n"
+                tool_info += f"- Años de servicio: {tool_results.get('años_servicio', 1.0)}\n"
+                calc_result = tool_results.get("calculation_result")
+                if calc_result:
+                    tool_info += f"\nResultados del cálculo:\n"
+                    tool_info += f"- Cesantías: ${calc_result.get('cesantias', 0):,.2f}\n"
+                    tool_info += f"- Intereses cesantías: ${calc_result.get('intereses_cesantias', 0):,.2f}\n"
+                    tool_info += f"- Prima de servicios: ${calc_result.get('prima_servicios', 0):,.2f}\n"
+                    tool_info += f"- Vacaciones: ${calc_result.get('vacaciones', 0):,.2f}\n"
+                    tool_info += f"- TOTAL: ${calc_result.get('total_prestaciones', 0):,.2f}\n"
+                defaults_used = tool_results.get("defaults_used", [])
+                if defaults_used:
+                    tool_info += f"\n⚠️ Valores por defecto usados: {', '.join(defaults_used)}\n"
+                    tool_info += f"Para resultados más precisos, el usuario debe especificar: salario, días trabajados y años de servicio.\n"
             
             elif tool_used == "search_by_year_range":
                 tool_info += f"\nBúsqueda por rango de años:\n"
@@ -824,10 +945,12 @@ Reglas:
 
 Reglas:
 1. Estás ayudando con un CÁLCULO de prestaciones sociales
-2. Cita las leyes y fórmulas relevantes del contexto
-3. Si falta información para el cálculo, indícalo claramente
-4. Sé claro, preciso y profesional
-5. Usa lenguaje accesible para el usuario"""
+2. Presenta los resultados del cálculo de forma clara y organizada
+3. Cita las leyes y fórmulas relevantes del contexto
+4. Si se usaron valores por defecto, SIEMPRE incluye al final una nota clara indicando:
+   "⚠️ Para obtener resultados más precisos, especifique: salario mensual, días trabajados, años de servicio y tipo de contrato."
+5. Sé claro, preciso y profesional
+6. Usa lenguaje accesible para el usuario"""
         elif tool_results and tool_results.get("tool_used") == "resume_document":
             system_prompt = """Eres un experto en derecho laboral colombiano. Tu tarea es generar un resumen DETALLADO y COMPLETO de un documento legal.
 
