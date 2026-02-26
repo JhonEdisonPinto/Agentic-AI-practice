@@ -79,12 +79,27 @@ def display_sidebar():
         st.markdown("---")
         st.subheader("🔧 Herramientas disponibles")
         st.markdown("""
+        El sistema usa **routing dirigido por LLM** 
+        para seleccionar automáticamente la herramienta 
+        más adecuada:
+        
         1. **Cálculo de prestaciones sociales**
         2. **Búsqueda por tipo de documento**
         3. **Búsqueda por rango de años**
         4. **Extracción de artículos específicos**
         5. **Comparación de documentos**
         6. **Resumen de documentos**
+        """)
+        
+        st.markdown("---")
+        st.subheader("📋 Tipos de consulta")
+        st.markdown("""
+        - 🏛️ **Normativa específica**: Leyes, decretos, sentencias
+        - 📋 **Procedimientos**: Trámites y pasos a seguir
+        - 💼 **General laboral**: Derechos y conceptos laborales (usa corpus)
+        - 💬 **General**: Saludos y preguntas no laborales (respuesta directa)
+        - 🧮 **Cálculos**: Liquidaciones, prestaciones
+        - 📄 **Resumen**: Resumen de documentos
         """)
 
 
@@ -114,7 +129,8 @@ def display_response(result: Dict[str, Any]):
         classification_labels = {
             "legal_specific": "🏛️ Normativa específica",
             "procedural": "📋 Procedimientos",
-            "general": "💼 Consulta general",
+            "general_laboral": "💼 Consulta general laboral",
+            "general": "💬 Consulta general",
             "calculation": "🧮 Cálculos",
             "resume": "📄 Resumen"
         }

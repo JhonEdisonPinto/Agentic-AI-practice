@@ -4,9 +4,9 @@ LangGraph workflow para RAG de normativa laboral colombiana.
 Cada nodo es una etapa del pipeline; el estado RAGState fluye entre ellos sin ramificaciones condicionales.
 
 Flujo:
-1. Classify: Clasifica la consulta del usuario
-2. Retrieve: Recupera documentos relevantes de ChromaDB
-3. Tool Calling: Ejecuta herramientas especializadas si es necesario
+1. Classify: Clasifica la consulta del usuario (LLM)
+2. Tool Calling: Selecciona herramientas especializadas mediante routing dirigido por LLM
+3. Retrieve: Recupera documentos relevantes de ChromaDB
 4. Generate: Genera respuesta usando el contexto
 5. Verify: Verifica la calidad y exactitud de la respuesta
 """
@@ -41,7 +41,8 @@ def classify_node(state: RAGState) -> RAGState:
     Categorías:
     - legal_specific: Pregunta sobre normativa específica
     - procedural: Pregunta sobre procedimientos o trámites
-    - general: Pregunta general sobre derechos laborales
+    - general_laboral: Pregunta general sobre derechos, obligaciones o conceptos laborales
+    - general: Pregunta general que no tiene que ver con el ámbito laboral o es un saludo/conversación básica
     - calculation: Pregunta que requiere cálculos
     - resume: Pregunta que requiere un resumen de un documento
     """
@@ -51,13 +52,14 @@ def classify_node(state: RAGState) -> RAGState:
     
     llm = init_gemini_llm()
     
-    classification_prompt = f"""Clasifica la siguiente consulta laboral en UNA de estas categorías:
+    classification_prompt = f"""Clasifica la siguiente consulta en UNA de estas categorías:
 
 1. legal_specific: Pregunta sobre una ley, decreto o sentencia específica
 2. procedural: Pregunta sobre procedimientos, trámites o pasos a seguir
-3. general: Pregunta general sobre derechos, obligaciones o conceptos laborales
+3. general_laboral: Pregunta general sobre derechos, obligaciones o conceptos laborales
 4. calculation: Pregunta que requiere cálculos (liquidaciones, pagos, etc.)
 5. resume: Pregunta que requiere un resumen de un documento específico
+6. general: Pregunta general que no tiene que ver con el ámbito laboral o es un saludo/conversación básica
 
 Consulta: "{query}"
 
@@ -67,9 +69,8 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
         response = llm.invoke(classification_prompt)
         classification = response.content.strip().lower()
         
-        # Si el LLM devuelve una categoría no reconocida (alucinación o formato inesperado),
-        # se fuerza a "general" para evitar que el resto del pipeline quede en estado inválido.
-        valid_classifications = ["legal_specific", "procedural", "general", "calculation", "resume"]
+        # Validar clasificación
+        valid_classifications = ["legal_specific", "procedural", "general_laboral", "general", "calculation", "resume"]
         if classification not in valid_classifications:
             classification = "general"
         
@@ -90,6 +91,8 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
             classification = "legal_specific"
         elif any(word in query_lower for word in ["cómo", "procedimiento", "trámite", "pasos"]):
             classification = "procedural"
+        elif any(word in query_lower for word in ["trabajo", "laboral", "empleado", "empleador", "contrato", "salario", "despido", "renuncia", "vacaciones", "jornada"]):
+            classification = "general_laboral"
         else:
             classification = "general"
         print(f"   ✓ Clasificación (fallback): {classification}")
@@ -103,256 +106,177 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
 def tool_calling_node(state: RAGState) -> RAGState:
     """
     Determina si se necesita ejecutar alguna herramienta especializada.
-    Detecta todos los casos y prepara los parámetros para ejecutar las herramientas.
+    Usa un LLM (Groq) para decidir qué herramienta usar y extraer los parámetros
+    necesarios de la consulta del usuario (routing dirigido por LLM).
     """
     query = state["query"]
     classification = state.get("classification", "general")
     
-    print(f"\n🔧 EVALUANDO HERRAMIENTAS ESPECIALIZADAS")
-    # Actúa como router basado en patrones regex, no en LLM.
-    # La evaluación es en cascada con guardias `if not tool_results`:
-    # solo una herramienta puede ser seleccionada por consulta.
-    # El orden de evaluación define la prioridad implícita entre herramientas.
+    print(f"\n🔧 EVALUANDO HERRAMIENTAS ESPECIALIZADAS (LLM routing)")
     
     tool_results = None
     
-    # 0. HERRAMIENTA: resume_document (PRIORIDAD: Detectar primero para evitar confusiones)
-    # Detectar consultas que requieren resumen de documento
-    # Se evalúa primero para evitar que "resumen de la ley 1010" sea capturado
-    # por search_by_document_type, que usa el mismo regex de LEY/DECRETO.
-    if classification == "resume":
-        doc_type = None
-        doc_number = None
-        doc_year = None
-        doc_id = None
+    try:
+        import json as _json
+        llm = init_groq_llm()
         
-        # Patrón 1: Sentencias (C-1234, T-1234, SU-1234, etc.)
-        sentencia_match = re.search(r'resumen\s+(?:de\s+)?(?:la\s+)?sentencia\s+([CT])-?(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
-        if sentencia_match:
-            sentencia_prefix = sentencia_match.group(1).upper()
-            sentencia_num = sentencia_match.group(2)
-            doc_year = sentencia_match.group(3) if sentencia_match.group(3) else None
-            
-            doc_type = "SENTENCIA"
-            doc_number = f"{sentencia_prefix}{sentencia_num}"
-            
-            if doc_year:
-                doc_id = f"SENTENCIA_{doc_number}_{doc_year}"
-            else:
-                doc_id = f"SENTENCIA_{doc_number}"
-            
-            print(f"   ✓ Detectado: Resumen de sentencia - {doc_id}")
+        routing_prompt = f"""Eres un router de herramientas para un sistema RAG de normativa laboral colombiana.
+Analiza la consulta del usuario y decide cuál herramienta usar.
+
+HERRAMIENTAS DISPONIBLES:
+
+1. resume_document — Resumir un documento legal completo.
+   Parámetros: doc_type (LEY|DECRETO|SENTENCIA|ACTO LEGISLATIVO), doc_number (str), doc_year (str|null), doc_id (str, formato: TIPO_NUMERO o TIPO_NUMERO_AÑO)
+
+2. calculate_prestaciones_sociales — Calcular prestaciones sociales, cesantías, primas, liquidaciones.
+   Parámetros: salario_detectado (float|null)
+
+3. extract_specific_article — Extraer un artículo concreto de una ley o decreto.
+   Parámetros: doc_type (LEY|DECRETO), doc_number (str), doc_year (str|null), doc_id (str), article_number (str)
+
+4. compare_documents — Comparar dos documentos legales entre sí.
+   Parámetros: doc_id1 (str), doc_id2 (str), topic (str, tema de la comparación)
+
+5. search_by_document_type — Buscar información sobre una ley, decreto o sentencia específica.
+   Parámetros: doc_type (LEY|DECRETO|SENTENCIA), doc_number (str), doc_year (str|null)
+
+6. search_by_year_range — Buscar normativa publicada en un rango de años.
+   Parámetros: start_year (int), end_year (int)
+
+7. none — No se necesita herramienta. Usar para preguntas generales sin mención de documentos específicos.
+
+REGLAS:
+- Si la clasificación es "resume", usa resume_document.
+- Si la clasificación es "calculation" y habla de prestaciones/cesantías/prima/liquidación, usa calculate_prestaciones_sociales.
+- Si pide un artículo concreto de una ley/decreto, usa extract_specific_article.
+- Si pide comparar dos documentos, usa compare_documents.
+- Si menciona una ley, decreto o sentencia específica (con número), usa search_by_document_type.
+- Si menciona dos o más años como rango temporal, usa search_by_year_range.
+- Para sentencias usa formato: doc_type="SENTENCIA", doc_number="C200" (prefijo+número).
+- doc_id sigue el formato: TIPO_NUMERO o TIPO_NUMERO_AÑO (ej: LEY_1010, DECRETO_36_2016, SENTENCIA_C200_2003).
+- Si detectas un salario en la consulta (ej: $2,500,000 o 2500000 pesos), extráelo como número en salario_detectado.
+- Si no se necesita ninguna herramienta, responde con tool_name "none".
+
+Clasificación actual: {classification}
+Consulta del usuario: "{query}"
+
+Responde ÚNICAMENTE con JSON válido (sin texto adicional, sin markdown) con esta estructura:
+{{"tool_name": "...", "parameters": {{...}}}}"""
+
+        response = llm.invoke(routing_prompt)
+        content = response.content.strip()
         
-        # Patrón 2: LEY/DECRETO (ej: "resumen de la ley 1010" o "resumen del decreto 36 de 2016")
-        if not doc_id:
-            doc_pattern = re.search(r'resumen\s+(?:de\s+)?(?:(?:la|del)\s+)?(ley|decreto|acto legislativo)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
-            if doc_pattern:
-                doc_type = doc_pattern.group(1).upper()
-                doc_number = doc_pattern.group(2)
-                doc_year = doc_pattern.group(3) if doc_pattern.group(3) else None
-                
+        # Limpiar posibles marcadores de markdown
+        if content.startswith("```"):
+            content = re.sub(r'^```(?:json)?\s*', '', content)
+            content = re.sub(r'\s*```$', '', content)
+        
+        parsed = _json.loads(content)
+        tool_name = parsed.get("tool_name", "none")
+        params = parsed.get("parameters", {})
+        
+        print(f"   🤖 LLM decidió: {tool_name}")
+        if params:
+            print(f"      Parámetros: {_json.dumps(params, ensure_ascii=False)}")
+        
+        # Construir tool_results según la herramienta seleccionada por el LLM
+        if tool_name == "resume_document":
+            doc_type = str(params.get("doc_type", "")).upper()
+            doc_number = str(params.get("doc_number", ""))
+            doc_year = params.get("doc_year")
+            doc_id = params.get("doc_id")
+            
+            # Construir doc_id si el LLM no lo proporcionó
+            if not doc_id:
                 if doc_year:
                     doc_id = f"{doc_type}_{doc_number}_{doc_year}"
                 else:
                     doc_id = f"{doc_type}_{doc_number}"
-                
-                print(f"   ✓ Detectado: Resumen de documento - {doc_id}")
-        
-        # Patrón 3: Estructura inversa (ej: "ley 1010 resumen" o "decreto 36 de 2016 resumen")
-        if not doc_id:
-            inverse_pattern = re.search(r'(ley|decreto|sentencia|acto legislativo)\s+([CT])?-?(\d+)(?:\s+de\s+(\d{4}))?.*resumen', query, re.IGNORECASE)
-            if inverse_pattern:
-                if inverse_pattern.group(2):  # Es una sentencia
-                    doc_type = "SENTENCIA"
-                    doc_number = f"{inverse_pattern.group(2).upper()}{inverse_pattern.group(3)}"
-                    doc_year = inverse_pattern.group(4) if inverse_pattern.group(4) else None
-                else:  # Es un LEY/DECRETO
-                    doc_type = inverse_pattern.group(1).upper()
-                    doc_number = inverse_pattern.group(3)
-                    doc_year = inverse_pattern.group(4) if inverse_pattern.group(4) else None
-                
-                if doc_year:
-                    doc_id = f"{doc_type}_{doc_number}_{doc_year}"
-                else:
-                    doc_id = f"{doc_type}_{doc_number}"
-                
-                print(f"   ✓ Detectado: Resumen de documento - {doc_id}")
-        
-        if doc_id:
+            
             tool_results = {
                 "tool_used": "resume_document",
                 "doc_id": doc_id,
                 "doc_type": doc_type,
                 "doc_number": doc_number,
-                "doc_year": doc_year
+                "doc_year": str(doc_year) if doc_year else None
             }
-    
-    # 1. HERRAMIENTA: calculate_prestaciones_sociales
-    if not tool_results and classification == "calculation":
-        if any(word in query.lower() for word in ["prestaciones", "cesantías", "prima", "liquidación"]):
-            print("   ✓ Detectado: Cálculo de prestaciones sociales")
-            # Extraer valores si están en la consulta - múltiples patrones de números
-            # Patrón 1: $2500000 (con o sin comas)
-            salary_patterns = [
-                r'\$\s*([\d,\.]+)',  # $2500000 o $2,500,000 o $2500000.00
-                r'salario\s+(?:de\s+)?\$?([\d,\.]+)',  # salario de 2500000
-                r'([\d,\.]+)\s*(?:pesos|COP)',  # 2500000 pesos o COP
-            ]
-            
-            salary_detected = None
-            for pattern in salary_patterns:
-                salary_match = re.search(pattern, query, re.IGNORECASE)
-                if salary_match:
-                    try:
-                        # Limpiar: quitar $ y espacios, reemplazar comas por nada
-                        raw_value = salary_match.group(1).strip()
-                        raw_value = raw_value.replace('.', '').replace(',', '')
-                        salary_detected = float(raw_value)
-                        print(f"      ✓ Salario detectado: ${salary_detected:,.2f}")
-                        break
-                    except Exception as e:
-                        print(f"      ⚠️ Error parsing salary: {e}")
-                        continue
-            
-            # Crear tool_results incluso si no encontramos salario exacto (puede venir después)
-            # Si no se detecta salario en la consulta, tool_results se crea igualmente con requires_user_input=True.
-            # Esto permite que generate_node solicite la información faltante al usuario en vez de fallar.
+        
+        elif tool_name == "calculate_prestaciones_sociales":
+            salary = params.get("salario_detectado")
             tool_results = {
                 "tool_used": "calculate_prestaciones_sociales",
                 "requires_user_input": True,
                 "message": "Necesito más información para el cálculo",
             }
-            if salary_detected:
-                tool_results["salario_detectado"] = salary_detected
-                print(f"      ✓ Tool creada con salario: {salary_detected}")
-    
-    # 2. HERRAMIENTA: extract_specific_article
-    # Detectar consultas sobre artículos específicos (ej: "artículo 5 de la ley 1010", "artículo 2 del decreto 1072")
-    if not tool_results and classification != "resume":
-        article_match = re.search(
-            r'art[íi]culo\s+(\d+)\s+.*?\b(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?',
-            query,
-            re.IGNORECASE
-        )
-        if article_match:
-            article_num = article_match.group(1)
-            doc_type = article_match.group(2).upper()
-            doc_num = article_match.group(3)
-            doc_year = article_match.group(4) if article_match.group(4) else None
+            if salary is not None:
+                try:
+                    tool_results["salario_detectado"] = float(salary)
+                    print(f"      ✓ Salario detectado: ${float(salary):,.2f}")
+                except (ValueError, TypeError):
+                    pass
+        
+        elif tool_name == "extract_specific_article":
+            doc_type = str(params.get("doc_type", "")).upper()
+            doc_number = str(params.get("doc_number", ""))
+            doc_year = params.get("doc_year")
+            doc_id = params.get("doc_id")
+            article_number = str(params.get("article_number", ""))
             
-            # Construir ID del documento
-            if doc_year:
-                doc_id = f"{doc_type}_{doc_num}_{doc_year}"
-                print(f"   ✓ Detectado: Extracción de artículo {article_num} de {doc_id}")
-            else:
-                doc_id = f"{doc_type}_{doc_num}"
-                print(f"   ✓ Detectado: Extracción de artículo {article_num} de {doc_id} (sin año)")
+            if not doc_id:
+                if doc_year:
+                    doc_id = f"{doc_type}_{doc_number}_{doc_year}"
+                else:
+                    doc_id = f"{doc_type}_{doc_number}"
             
             tool_results = {
                 "tool_used": "extract_specific_article",
                 "doc_id": doc_id,
-                "article_number": article_num,
+                "article_number": article_number,
                 "doc_type": doc_type,
-                "doc_number": doc_num,
-                "doc_year": doc_year
+                "doc_number": doc_number,
+                "doc_year": str(doc_year) if doc_year else None
             }
-    
-    # 3. HERRAMIENTA: compare_documents
-    # Detectar comparaciones entre documentos
-    if not tool_results:
-        compare_patterns = [
-            r'compar[ae]r?\s+(?:la\s+)?(ley|decreto)\s+(\d+).*(?:con|y|vs).*(?:la\s+)?(ley|decreto)\s+(\d+)',
-            r'diferencias?\s+entre\s+(?:la\s+)?(ley|decreto)\s+(\d+).*(?:y|con).*(?:la\s+)?(ley|decreto)\s+(\d+)'
-        ]
         
-        for pattern in compare_patterns:
-            compare_match = re.search(pattern, query, re.IGNORECASE)
-            if compare_match:
-                doc1_type = compare_match.group(1).upper()
-                doc1_num = compare_match.group(2)
-                doc2_type = compare_match.group(3).upper()
-                doc2_num = compare_match.group(4)
-                
-                # Extraer tema de comparación (palabras clave)
-                topic_words = []
-                for word in query.lower().split():
-                    if word not in ['comparar', 'diferencia', 'entre', 'con', 'la', 'el', 'de', 'ley', 'decreto', 'y']:
-                        if not word.isdigit():
-                            topic_words.append(word)
-                topic = " ".join(topic_words[:3]) if topic_words else "contenido general"
-                
-                doc1_id = f"{doc1_type}_{doc1_num}"
-                doc2_id = f"{doc2_type}_{doc2_num}"
-                
-                print(f"   ✓ Detectado: Comparación entre {doc1_id} y {doc2_id}")
-                print(f"      Tema: {topic}")
-                
-                tool_results = {
-                    "tool_used": "compare_documents",
-                    "doc_id1": doc1_id,
-                    "doc_id2": doc2_id,
-                    "topic": topic
-                }
-                break
-    
-    # 4. HERRAMIENTA: search_by_document_type
-    # Patrón 1: LEY/DECRETO con número y año opcional
-    if not tool_results and classification != "resume":
-        doc_type_match = re.search(r'(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
-        if doc_type_match:
-            doc_type = doc_type_match.group(1).upper()
-            doc_num = doc_type_match.group(2)
-            doc_year = doc_type_match.group(3) if doc_type_match.group(3) else None
+        elif tool_name == "compare_documents":
+            doc_id1 = str(params.get("doc_id1", ""))
+            doc_id2 = str(params.get("doc_id2", ""))
+            topic = str(params.get("topic", "contenido general"))
             
-            if doc_year:
-                print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num} DE {doc_year}")
-            else:
-                print(f"   ✓ Detectado: Búsqueda por documento específico - {doc_type} {doc_num}")
-                
+            tool_results = {
+                "tool_used": "compare_documents",
+                "doc_id1": doc_id1,
+                "doc_id2": doc_id2,
+                "topic": topic
+            }
+        
+        elif tool_name == "search_by_document_type":
+            doc_type = str(params.get("doc_type", "")).upper()
+            doc_number = str(params.get("doc_number", ""))
+            doc_year = params.get("doc_year")
+            
             tool_results = {
                 "tool_used": "search_by_document_type",
                 "doc_type": doc_type,
-                "doc_number": doc_num,
-                "doc_year": doc_year
+                "doc_number": doc_number,
+                "doc_year": str(doc_year) if doc_year else None
             }
-    
-    # Patrón 2: SENTENCIA (formato C-200, T-1234, etc.)
-    # Corre separado del Patrón 1 porque las sentencias tienen formato diferente (C-200, T-1234)
-    # y no son capturadas por el regex de LEY/DECRETO.
-    if not tool_results:
-        sentencia_match = re.search(r'sentencia\s+([CT])-?(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
-        if sentencia_match:
-            sentencia_prefix = sentencia_match.group(1).upper()
-            sentencia_num = sentencia_match.group(2)
-            doc_year = sentencia_match.group(3) if sentencia_match.group(3) else None
+        
+        elif tool_name == "search_by_year_range":
+            start_year = int(params.get("start_year", 0))
+            end_year = int(params.get("end_year", 0))
             
-            # El número de sentencia incluye el prefijo: C200, T1234
-            doc_num = f"{sentencia_prefix}{sentencia_num}"
-            
-            if doc_year:
-                print(f"   ✓ Detectado: Búsqueda por sentencia específica - SENTENCIA_{doc_num}_{doc_year}")
-            else:
-                print(f"   ✓ Detectado: Búsqueda por sentencia específica - SENTENCIA_{doc_num}")
-            
-            tool_results = {
-                "tool_used": "search_by_document_type",
-                "doc_type": "SENTENCIA",
-                "doc_number": doc_num,
-                "doc_year": doc_year
-            }
-    
-    # 5. HERRAMIENTA: search_by_year_range
-    # Detectar rango de años
-    if not tool_results and classification != "resume":
-        year_match = re.findall(r'\b(?:19|20)\d{2}\b', query)
-        if len(year_match) >= 2:
-            years = sorted([int(y) for y in year_match])
-            print(f"   ✓ Detectado: Búsqueda por rango de años - {years[0]} a {years[-1]}")
             tool_results = {
                 "tool_used": "search_by_year_range",
-                "start_year": years[0],
-                "end_year": years[-1]
+                "start_year": start_year,
+                "end_year": end_year
             }
+        
+        # else: tool_name == "none" → tool_results queda None
+    
+    except Exception as e:
+        print(f"   ⚠️ Error en LLM routing: {str(e)[:150]}")
+        print(f"   ⚠️ Usando fallback con patrones de texto")
+        tool_results = _tool_calling_fallback(query, classification)
     
     if tool_results:
         print(f"   ✓ Herramienta seleccionada: {tool_results.get('tool_used', 'N/A')}")
@@ -361,6 +285,103 @@ def tool_calling_node(state: RAGState) -> RAGState:
     
     state["tool_results"] = tool_results
     return state
+
+
+def _tool_calling_fallback(query: str, classification: str):
+    """
+    Fallback basado en patrones de texto para selección de herramientas.
+    Se usa solo cuando el LLM routing falla.
+    """
+    tool_results = None
+    
+    # resume_document
+    if classification == "resume":
+        doc_match = re.search(
+            r'(ley|decreto|sentencia|acto legislativo)\s+([CT])?-?(\d+)(?:\s+de\s+(\d{4}))?',
+            query, re.IGNORECASE
+        )
+        if doc_match:
+            if doc_match.group(2):
+                doc_type = "SENTENCIA"
+                doc_number = f"{doc_match.group(2).upper()}{doc_match.group(3)}"
+            else:
+                doc_type = doc_match.group(1).upper()
+                doc_number = doc_match.group(3)
+            doc_year = doc_match.group(4) if doc_match.group(4) else None
+            doc_id = f"{doc_type}_{doc_number}_{doc_year}" if doc_year else f"{doc_type}_{doc_number}"
+            tool_results = {
+                "tool_used": "resume_document",
+                "doc_id": doc_id, "doc_type": doc_type,
+                "doc_number": doc_number, "doc_year": doc_year
+            }
+    
+    # calculate_prestaciones_sociales
+    if not tool_results and classification == "calculation":
+        if any(w in query.lower() for w in ["prestaciones", "cesantías", "prima", "liquidación"]):
+            tool_results = {
+                "tool_used": "calculate_prestaciones_sociales",
+                "requires_user_input": True,
+                "message": "Necesito más información para el cálculo",
+            }
+            salary_match = re.search(r'\$\s*([\d,\.]+)', query)
+            if salary_match:
+                try:
+                    raw = salary_match.group(1).replace('.', '').replace(',', '')
+                    tool_results["salario_detectado"] = float(raw)
+                except Exception:
+                    pass
+    
+    # extract_specific_article
+    if not tool_results and classification != "resume":
+        m = re.search(r'art[íi]culo\s+(\d+)\s+.*?\b(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
+        if m:
+            doc_type = m.group(2).upper()
+            doc_num = m.group(3)
+            doc_year = m.group(4)
+            doc_id = f"{doc_type}_{doc_num}_{doc_year}" if doc_year else f"{doc_type}_{doc_num}"
+            tool_results = {
+                "tool_used": "extract_specific_article",
+                "doc_id": doc_id, "article_number": m.group(1),
+                "doc_type": doc_type, "doc_number": doc_num, "doc_year": doc_year
+            }
+    
+    # compare_documents
+    if not tool_results:
+        for pat in [
+            r'compar[ae]r?\s+(?:la\s+)?(ley|decreto)\s+(\d+).*(?:con|y|vs).*(?:la\s+)?(ley|decreto)\s+(\d+)',
+            r'diferencias?\s+entre\s+(?:la\s+)?(ley|decreto)\s+(\d+).*(?:y|con).*(?:la\s+)?(ley|decreto)\s+(\d+)'
+        ]:
+            m = re.search(pat, query, re.IGNORECASE)
+            if m:
+                tool_results = {
+                    "tool_used": "compare_documents",
+                    "doc_id1": f"{m.group(1).upper()}_{m.group(2)}",
+                    "doc_id2": f"{m.group(3).upper()}_{m.group(4)}",
+                    "topic": "contenido general"
+                }
+                break
+    
+    # search_by_document_type
+    if not tool_results and classification != "resume":
+        m = re.search(r'(ley|decreto)\s+(\d+)(?:\s+de\s+(\d{4}))?', query, re.IGNORECASE)
+        if m:
+            tool_results = {
+                "tool_used": "search_by_document_type",
+                "doc_type": m.group(1).upper(), "doc_number": m.group(2),
+                "doc_year": m.group(3) if m.group(3) else None
+            }
+    
+    # search_by_year_range
+    if not tool_results and classification != "resume":
+        years = re.findall(r'\b(?:19|20)\d{2}\b', query)
+        if len(years) >= 2:
+            ys = sorted(int(y) for y in years)
+            tool_results = {
+                "tool_used": "search_by_year_range",
+                "start_year": ys[0], "end_year": ys[-1]
+            }
+    
+    return tool_results
 
 
 def retrieve_node(state: RAGState) -> RAGState:
@@ -683,7 +704,7 @@ def generate_node(state: RAGState) -> RAGState:
     
     print(f"\n✍️  GENERANDO RESPUESTA")
     
-    if not documents:
+    if not documents and classification != "general":
         state["answer"] = "Lo siento, no encontré información relevante para responder tu consulta."
         print("   ⚠️ No hay documentos para generar respuesta")
         return state
@@ -836,6 +857,17 @@ Reglas:
 3. Si el tema específico preguntado está en los documentos, resáltalo
 4. Si no hay información sobre el tema específico, indica qué documentos se encontraron pero no tratan ese tema
 5. Sé específico y útil"""
+        elif classification == "general":
+            system_prompt = """Eres un asistente útil y amable. Tu trabajo es responder preguntas generales o saludos de manera concisa."""
+        elif classification == "general_laboral":
+            system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas generales sobre normativa laboral basándote en el contexto proporcionado.
+
+Reglas:
+1. Responde SOLO con información del contexto
+2. Cita las leyes, decretos o sentencias específicas cuando sea relevante
+3. Si la información no está en el contexto, di que no tienes esa información
+4. Sé claro, preciso y profesional
+5. Usa lenguaje accesible para el usuario"""
         else:
             system_prompt = """Eres un experto en derecho laboral colombiano. Tu trabajo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado.
 
@@ -912,6 +944,10 @@ INSTRUCCIONES:
 4. Si ningún documento trata el tema específico, menciona qué documentos se encontraron en ese período
 
 Responde de manera informativa y útil."""
+        elif classification == "general":
+            user_prompt = f"""Pregunta del usuario: {query}
+
+Proporciona una respuesta clara y precisa:"""
         else:
             user_prompt = f"""Contexto de normativa laboral colombiana:
 
@@ -1022,6 +1058,7 @@ def verify_node(state: RAGState) -> RAGState:
     answer = state.get("answer", "")
     documents = state.get("documents", [])
     query = state["query"]
+    classification = state.get("classification", "general")
 
     print(f"\n✅ VERIFICANDO RESPUESTA (detallado)")
 
@@ -1036,6 +1073,18 @@ def verify_node(state: RAGState) -> RAGState:
         "completeness_score": None,
         "recommended_action": "accept",
     }
+
+    # Si es una consulta general, no verificamos contra contexto
+    if classification == "general":
+        verification["quality_score"] = 1.0
+        verification["quality_level"] = "excellent"
+        verification["supported_by_context"] = True
+        verification["coherence_score"] = 100
+        verification["completeness_score"] = 100
+        verification["verification_method"] = "skipped_for_general"
+        state["verification"] = verification
+        print("   ✓ Verificación omitida para consulta general")
+        return state
 
     max_retries = 1
     attempt = 0
@@ -1209,7 +1258,18 @@ def build_graph():
     # Toda la lógica de routing está encapsulada dentro de los nodos (tool_calling, retrieve).
     # Esto simplifica el grafo pero concentra responsabilidad en los nodos intermedios.
     graph.set_entry_point("classify")
-    graph.add_edge("classify", "tool_calling")
+    
+    # Edge condicional desde classify
+    # Si es general, saltamos tool_calling y retrieve, y vamos directo a generate
+    graph.add_conditional_edges(
+        "classify",
+        lambda state: "generate" if state.get("classification") == "general" else "tool_calling",
+        {
+            "generate": "generate",
+            "tool_calling": "tool_calling"
+        }
+    )
+    
     graph.add_edge("tool_calling", "retrieve")
     graph.add_edge("retrieve", "generate")
     graph.add_edge("generate", "verify")
