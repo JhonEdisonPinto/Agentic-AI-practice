@@ -1,6 +1,7 @@
 streamlit
 langchain>=1.0.0
 langchain-core
+langchain-experimental
 langchain-community
 langchain-google-genai
 langchain-groq

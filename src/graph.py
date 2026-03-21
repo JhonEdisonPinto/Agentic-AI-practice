@@ -15,7 +15,8 @@ from langchain_core.documents import Document
 
 from langgraph.graph import END, StateGraph
 
-from src.config import init_embeddings, init_gemini_llm, init_groq_llm
+from src.config import init_embeddings, init_groq_llm, init_verification_llm
+from src.tools import ROUTING_TOOLS
 from src.vectorstore import load_chroma_index
 import os
 import re
@@ -50,7 +51,7 @@ def classify_node(state: RAGState) -> RAGState:
     
     print(f"\n🔍 CLASIFICANDO: {query}")
     
-    llm = init_gemini_llm()
+    llm = init_groq_llm(temperature=0)
     
     classification_prompt = f"""Clasifica la siguiente consulta en UNA de estas categorías:
 
@@ -79,7 +80,7 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
     except Exception as e:
         print(f"   ⚠️ Error en clasificación (usando clasificación simple): {str(e)[:100]}")
         # Clasificación simple basada en palabras clave
-        # Fallback por keywords cuando Gemini falla o no está disponible.
+        # Fallback por keywords cuando el LLM principal falla o no está disponible.
         # El orden de los condicionales importa: "calculation" y "resume" se evalúan antes
         # que "legal_specific" para evitar colisiones con palabras como "ley" en contextos de cálculo.
         query_lower = query.lower()
@@ -98,7 +99,7 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
         print(f"   ✓ Clasificación (fallback): {classification}")
     
     state["classification"] = classification
-    state["metadata"] = {"classification_method": "gemini"}
+    state["metadata"] = {"classification_method": "groq_llama_3_3_70b_versatile"}
     
     return state
 
@@ -106,80 +107,58 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
 def tool_calling_node(state: RAGState) -> RAGState:
     """
     Determina si se necesita ejecutar alguna herramienta especializada.
-    Usa un LLM (Groq) para decidir qué herramienta usar y extraer los parámetros
-    necesarios de la consulta del usuario (routing dirigido por LLM).
+    Implementa routing de tipo ReAct usando `llm.bind_tools(tools)` para que
+    el modelo seleccione la herramienta adecuada a partir de la lista disponible.
     """
     query = state["query"]
     classification = state.get("classification", "general")
     
-    print(f"\n🔧 EVALUANDO HERRAMIENTAS ESPECIALIZADAS (LLM routing)")
+    print(f"\n🔧 EVALUANDO HERRAMIENTAS ESPECIALIZADAS (ReAct + bind_tools)")
     
     tool_results = None
     
     try:
         import json as _json
-        llm = init_groq_llm()
-        
-        routing_prompt = f"""Eres un router de herramientas para un sistema RAG de normativa laboral colombiana.
-Analiza la consulta del usuario y decide cuál herramienta usar.
 
-HERRAMIENTAS DISPONIBLES:
+        llm = init_groq_llm(temperature=0)
+        llm_with_tools = llm.bind_tools(ROUTING_TOOLS)
 
-1. resume_document — Resumir un documento legal completo.
-   Parámetros: doc_type (LEY|DECRETO|SENTENCIA|ACTO LEGISLATIVO), doc_number (str), doc_year (str|null), doc_id (str, formato: TIPO_NUMERO o TIPO_NUMERO_AÑO)
+        routing_prompt = f"""Eres un agente router de herramientas para normativa laboral colombiana.
 
-2. calculate_prestaciones_sociales — Calcular prestaciones sociales, cesantías, primas, liquidaciones.
-   Parámetros: salario_detectado (float|null), dias_trabajados (int|null), años_servicio (float|null)
+Tu tarea es decidir si debes llamar UNA herramienta de la lista disponible.
+Si ninguna aplica, responde en texto corto: "none" y NO llames herramientas.
 
-3. extract_specific_article — Extraer un artículo concreto de una ley o decreto.
-   Parámetros: doc_type (LEY|DECRETO), doc_number (str), doc_year (str|null), doc_id (str), article_number (str)
-
-4. compare_documents — Comparar dos documentos legales entre sí.
-   Parámetros: doc_id1 (str), doc_id2 (str), topic (str, tema de la comparación)
-
-5. search_by_document_type — Buscar información sobre una ley, decreto o sentencia específica.
-   Parámetros: doc_type (LEY|DECRETO|SENTENCIA), doc_number (str), doc_year (str|null)
-
-6. search_by_year_range — Buscar normativa publicada en un rango de años.
-   Parámetros: start_year (int), end_year (int)
-
-7. none — No se necesita herramienta. Usar para preguntas generales sin mención de documentos específicos.
-
-REGLAS:
+Reglas de selección:
 - Si la clasificación es "resume", usa resume_document.
 - Si la clasificación es "calculation" y habla de prestaciones/cesantías/prima/liquidación, usa calculate_prestaciones_sociales.
 - Si pide un artículo concreto de una ley/decreto, usa extract_specific_article.
 - Si pide comparar dos documentos, usa compare_documents.
 - Si menciona una ley, decreto o sentencia específica (con número), usa search_by_document_type.
 - Si menciona dos o más años como rango temporal, usa search_by_year_range.
-- Para sentencias usa formato: doc_type="SENTENCIA", doc_number="C200" (prefijo+número).
-- doc_id sigue el formato: TIPO_NUMERO o TIPO_NUMERO_AÑO (ej: LEY_1010, DECRETO_36_2016, SENTENCIA_C200_2003).
-- Si detectas un salario en la consulta (ej: $2,500,000 o 2500000 pesos), extráelo como número en salario_detectado.
-- Si detectas días trabajados (ej: 30 días, 180 días), extráelos como número en dias_trabajados.
-- Si detectas años de servicio (ej: 5 años, 2.5 años), extráelos como número en años_servicio.
-- Si no se necesita ninguna herramienta, responde con tool_name "none".
+
+Notas de argumentos:
+- No incluyas `vectorstore`; ese parámetro lo inyecta el sistema posteriormente.
+- Para sentencias usa formato doc_number tipo C200 (prefijo+número).
+- doc_id sigue el formato TIPO_NUMERO o TIPO_NUMERO_AÑO.
+- Si detectas salario, días trabajados o años de servicio, inclúyelos.
 
 Clasificación actual: {classification}
-Consulta del usuario: "{query}"
+Consulta del usuario: "{query}"""
 
-Responde ÚNICAMENTE con JSON válido (sin texto adicional, sin markdown) con esta estructura:
-{{"tool_name": "...", "parameters": {{...}}}}"""
+        response = llm_with_tools.invoke(routing_prompt)
+        tool_calls = getattr(response, "tool_calls", None) or []
 
-        response = llm.invoke(routing_prompt)
-        content = response.content.strip()
-        
-        # Limpiar posibles marcadores de markdown
-        if content.startswith("```"):
-            content = re.sub(r'^```(?:json)?\s*', '', content)
-            content = re.sub(r'\s*```$', '', content)
-        
-        parsed = _json.loads(content)
-        tool_name = parsed.get("tool_name", "none")
-        params = parsed.get("parameters", {})
-        
-        print(f"   🤖 LLM decidió: {tool_name}")
-        if params:
-            print(f"      Parámetros: {_json.dumps(params, ensure_ascii=False)}")
+        if tool_calls:
+            first_call = tool_calls[0]
+            tool_name = first_call.get("name", "none")
+            params = first_call.get("args", {}) or {}
+            print(f"   🤖 Agente ReAct seleccionó: {tool_name}")
+            if params:
+                print(f"      Parámetros: {_json.dumps(params, ensure_ascii=False)}")
+        else:
+            tool_name = "none"
+            params = {}
+            print("   🤖 Agente ReAct no seleccionó herramienta")
         
         # Construir tool_results según la herramienta seleccionada por el LLM
         if tool_name == "resume_document":
@@ -308,7 +287,7 @@ Responde ÚNICAMENTE con JSON válido (sin texto adicional, sin markdown) con es
         # else: tool_name == "none" → tool_results queda None
     
     except Exception as e:
-        print(f"   ⚠️ Error en LLM routing: {str(e)[:150]}")
+        print(f"   ⚠️ Error en ReAct routing: {str(e)[:150]}")
         print(f"   ⚠️ Usando fallback con patrones de texto")
         tool_results = _tool_calling_fallback(query, classification)
     
@@ -540,7 +519,8 @@ def retrieve_node(state: RAGState) -> RAGState:
                 })
                 
                 # El resultado de la comparación se inyecta de vuelta en state["tool_results"]
-                # para que generate_node pueda construir el prompt con metadatos de ambos documentos.                state["tool_results"]["comparison_result"] = comparison_result
+                # para que generate_node pueda construir el prompt con metadatos de ambos documentos.
+                state["tool_results"]["comparison_result"] = comparison_result
                 print(f"      ✓ Comparación completada")
                 print(f"         Doc1: {comparison_result['documento1']['fragmentos_encontrados']} fragmentos")
                 print(f"         Doc2: {comparison_result['documento2']['fragmentos_encontrados']} fragmentos")
@@ -1132,7 +1112,7 @@ Proporciona una respuesta clara y precisa basada en el contexto:"""
         print(f"   ✓ Fuentes incluidas: {len(sources_list)}")
         
         state["answer"] = answer
-        state["metadata"]["generation_model"] = "groq-llama-3.1-70b"
+        state["metadata"]["generation_model"] = "groq-llama-3.3-70b-versatile"
         state["metadata"]["sources_count"] = len(sources_list)
         
     except Exception as e:
@@ -1222,16 +1202,37 @@ def verify_node(state: RAGState) -> RAGState:
         context_pieces.append(f"Documento {i} ({doc_id}):\n{content}")
     context_excerpt = "\n\n---\n\n".join(context_pieces) if context_pieces else "(sin contexto)"
 
+    def _normalize_support_score(value: Any) -> float:
+        """Normaliza supported_by_context a un score 0-100."""
+        if value is None:
+            return 0.0
+        if isinstance(value, bool):
+            return 100.0 if value else 0.0
+        if isinstance(value, (int, float)):
+            return max(0.0, min(100.0, float(value)))
+        if isinstance(value, str):
+            raw = value.strip().lower()
+            if raw in {"true", "yes", "si", "sí"}:
+                return 100.0
+            if raw in {"false", "no"}:
+                return 0.0
+            try:
+                parsed = float(raw.replace(",", "."))
+                return max(0.0, min(100.0, parsed))
+            except ValueError:
+                return 0.0
+        return 0.0
+
     while True:
         attempt += 1
         try:
-            llm = init_gemini_llm()
+            llm = init_verification_llm(temperature=0)
 
             verify_prompt = f"""Eres un verificador moderado en derecho laboral. Tu objetivo es evaluar si la respuesta es correcta, útil y está bien soportada.
 
 Devuelve UNICAMENTE un JSON estricto (sin explicaciones)
 con las siguientes claves:
- - supported_by_context: booleano
+ - supported_by_context: 0-100 (¿la respuesta está respaldada por el contexto proporcionado?)
  - unsupported_claims: lista de frases (puede estar vacía)
  - coherence_score: entero 0-100
  - completeness_score: entero 0-100 (¿la respuesta cumple con lo pedido?)
@@ -1250,7 +1251,7 @@ Instrucciones para el verificador (NO incluir en la salida):
  • Sé JUSTO pero EXIGENTE: evalúa si la respuesta está bien soportada en el contexto.
  • Si hay afirmaciones no soportadas o contradictoras, inclúyelas en 'unsupported_claims'.
  • completeness_score: evalúa si la respuesta responde completamente la pregunta. 60+ es bueno, <50 puede requerir regeneración.
- • supported_by_context debe ser false si hay afirmaciones no respaldadas.
+ • supported_by_context debe bajar claramente (por ejemplo por cada afirmación no respaldada restar 10 al valor de 100) si hay afirmaciones no respaldadas.
  • Si la respuesta es INCOMPLETA o tiene ERRORES LEGALES, recomienda 'regenerate'.
  • Regenera solo si la calidad es claramente mejorable.
  Responde SOLO con JSON válido."""
@@ -1274,19 +1275,21 @@ Instrucciones para el verificador (NO incluir en la salida):
                     raise ValueError("No se pudo parsear JSON de la respuesta de verificación")
 
             # Normalizar y guardar en verification
-            verification["supported_by_context"] = bool(parsed.get("supported_by_context"))
+            support_score_raw = _normalize_support_score(parsed.get("supported_by_context"))
+            verification["support_score"] = int(round(support_score_raw))
+            verification["supported_by_context"] = support_score_raw >= 70.0
             verification["unsupported_claims"] = parsed.get("unsupported_claims", []) or []
             verification["coherence_score"] = int(parsed.get("coherence_score") or 0)
             verification["completeness_score"] = int(parsed.get("completeness_score") or 0)
             verification["recommended_action"] = parsed.get("recommended_action", "accept")
-            verification["verification_method"] = "gemini_json"
+            verification["verification_method"] = "groq_openai_gpt_oss_120b_json"
 
             # Derivar quality_score a partir de coherence/completeness y soporte
             # Ponderación: soporte contextual (35%) + coherencia (35%) + completitud (30%).
-            # El soporte es binario (0.0 o 1.0), lo que penaliza fuerte respuestas no respaldadas en el contexto.
+            # El soporte usa escala continua 0-100 para capturar gradientes de respaldo contextual.
             coherence = verification["coherence_score"] / 100.0
             completeness = verification["completeness_score"] / 100.0
-            support = 1.0 if verification["supported_by_context"] else 0.0
+            support = support_score_raw / 100.0
 
             # Ponderación balanceada: soporte y coherencia importantes, completitud también
             quality_score = (0.35 * support) + (0.35 * coherence) + (0.3 * completeness)
@@ -1351,7 +1354,7 @@ Instrucciones para el verificador (NO incluir en la salida):
         except Exception as e:
             print(f"   ⚠️ Error en verificación detallada: {e}")
             # Fallback ligero: marcar score medio y aceptar parcialmente.
-            # Si Gemini falla durante la verificación, se asigna quality_score=0.5 y recommended_action="accept".
+            # Si el verificador falla durante la verificación, se asigna quality_score=0.5 y recommended_action="accept".
             # Se acepta la respuesta sin verificar para no bloquear el pipeline por un fallo del verificador.
             verification["verification_error"] = str(e)
             verification["quality_score"] = 0.5

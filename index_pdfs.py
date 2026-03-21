@@ -104,31 +104,44 @@ def load_pdf_documents(corpus_path: str) -> List[Document]:
     return all_documents
 
 
-def split_documents(documents: List[Document]) -> List[Document]:
+def split_documents(documents: List[Document], embedding_fn=None) -> List[Document]:
     """
     Divide los documentos en chunks más pequeños para mejor recuperación.
     """
     print("\n✂️  Dividiendo documentos en chunks...")
 
-    # chunk_size=2000, overlap=500 (25%). Separadores en orden de preferencia:
-    # párrafo → línea → oración → palabra → carácter.
-    # La metadata de cada página se hereda automáticamente a sus chunks.
-    
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=2000,  # Tamaño del chunk en caracteres
-        chunk_overlap=500,  # Overlap para mantener contexto
-        length_function=len,
-        separators=["\n\n", "\n", ". ", " ", ""],
-    )
-    
-    chunks = text_splitter.split_documents(documents)
+    chunks = []
+
+    # SemanticChunker mejora los cortes al detectar cambios semánticos reales
+    # y reduce fragmentaciones artificiales por tamaño fijo.
+    if embedding_fn is not None:
+        try:
+            from langchain_experimental.text_splitter import SemanticChunker
+
+            semantic_chunker = SemanticChunker(embedding_fn)
+            chunks = semantic_chunker.split_documents(documents)
+            print("   ✓ Chunking semántico aplicado (SemanticChunker)")
+        except Exception as e:
+            print(f"   ⚠️ No se pudo usar SemanticChunker: {e}")
+            print("   ⚠️ Usando fallback con RecursiveCharacterTextSplitter")
+
+    if not chunks:
+        # Fallback robusto: chunking por tamaño con overlap.
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=2000,  # Tamaño del chunk en caracteres
+            chunk_overlap=500,  # Overlap para mantener contexto
+            length_function=len,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+        chunks = text_splitter.split_documents(documents)
+        print("   ✓ Chunking por tamaño aplicado (fallback)")
     
     print(f"✓ {len(chunks)} chunks creados (promedio: {len(chunks)//len(documents)} chunks por página)")
     
     return chunks
 
 
-def index_documents(chunks: List[Document], persist_dir: str, collection_name: str):
+def index_documents(chunks: List[Document], persist_dir: str, collection_name: str, embedding_fn=None):
     """
     Indexa los chunks en ChromaDB con embeddings.
     """
@@ -136,9 +149,9 @@ def index_documents(chunks: List[Document], persist_dir: str, collection_name: s
     print(f"   Directorio: {persist_dir}")
     print(f"   Colección: {collection_name}")
     
-    # Inicializar embeddings
+    # Inicializar embeddings (o reutilizar instancia ya creada)
     print("\n   Inicializando embeddings...")
-    embedding_fn = init_embeddings()
+    embedding_fn = embedding_fn or init_embeddings()
     print(f"   ✓ Embeddings listos: {type(embedding_fn).__name__}")
     
     # Crear índice
@@ -247,13 +260,17 @@ def main():
     for tipo, count in sorted(tipos.items()):
         print(f"      {tipo}: {count} páginas")
     
+    # Inicializar embeddings una vez para reutilizarlos en chunking + indexación
+    print("\n   Inicializando embeddings para chunking semántico...")
+    embedding_fn = init_embeddings()
+
     # 3. Dividir en chunks
     print("\n3️⃣  DIVISIÓN EN CHUNKS")
-    chunks = split_documents(documents)
+    chunks = split_documents(documents, embedding_fn=embedding_fn)
     
     # 4. Indexar
     print("\n4️⃣  INDEXACIÓN")
-    vectorstore = index_documents(chunks, persist_dir, collection_name)
+    vectorstore = index_documents(chunks, persist_dir, collection_name, embedding_fn=embedding_fn)
     
     # 5. Verificar
     print("\n5️⃣  VERIFICACIÓN")

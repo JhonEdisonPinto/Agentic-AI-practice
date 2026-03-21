@@ -15,29 +15,29 @@ def load_settings() -> None:
 
 
 def init_gemini_llm():
-    # Gemini 2.5 Flash Para clasificar y validar.
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        temperature=0,
-    )
-    # temperature=0 asegura respuestas deterministas, 
-    # lo cual es requerido para tareas de clasificación consistente.
+    # Alias de compatibilidad: migrado a Groq para unificar proveedor y aumentar throughput.
+    return init_groq_llm(temperature=0)
 
 
 
-def init_groq_llm():
-    # Inicializa el LLM Llama 3.1 vía Groq, 
-    # usado en el nodo de generación de respuestas.
-    # El modelo "instant" prioriza baja latencia, 
-    # relevante para la experiencia en la interfaz Streamlit.
-    # temperature=0.2 permite respuestas con mayor fluidez narrativa respecto a los nodos de clasificación.
+def init_groq_llm(temperature: float = 0.2, model: str | None = None):
+    # Inicializa el LLM vía Groq.
+    # Por defecto se usa llama-3.3-70b-versatile para clasificación, routing y generación.
+    # El modelo también puede ajustarse por variable de entorno GROQ_MODEL.
     from langchain_groq import ChatGroq
 
     return ChatGroq(
-        model="llama-3.1-8b-instant",
-        temperature=0.2,
+        model=model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        temperature=temperature,
+    )
+
+
+def init_verification_llm(temperature: float = 0):
+    # LLM dedicado a verificación: por defecto usa openai/gpt-oss-120b.
+    # Puede sobreescribirse con GROQ_VERIFICATION_MODEL.
+    return init_groq_llm(
+        temperature=temperature,
+        model=os.getenv("GROQ_VERIFICATION_MODEL", "openai/gpt-oss-120b"),
     )
 
 # Inicializa el modelo de embeddings según el provider indicado.

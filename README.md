@@ -245,7 +245,7 @@ La aplicación se abrirá automáticamente en http://localhost:8501
 ```
 Usuario → Classify → Tool Calling → Retrieve → Generate → Verify → Respuesta
               ↓           ↓            ↓          ↓          ↓
-           Gemini      5 Tools    ChromaDB    Groq     Gemini
+        Groq       5 Tools    ChromaDB    Groq      Groq
 ```
 
 ### Tecnologías Utilizadas
@@ -255,9 +255,9 @@ Usuario → Classify → Tool Calling → Retrieve → Generate → Verify → R
 | **Orquestación** | LangGraph | Pipeline de 5 nodos |
 | **Vector DB** | ChromaDB | Almacenamiento y búsqueda |
 | **Embeddings** | Sentence Transformers | Modelo multilingüe local |
-| **LLM Clasificación** | Google Gemini 2.0 Flash | Clasificar consultas |
-| **LLM Generación** | Groq (Llama 3.1 70B) | Generar respuestas |
-| **LLM Verificación** | Google Gemini 2.0 Flash | Validar calidad |
+| **LLM Clasificación** | Groq (openai/gpt-oss-120b) | Clasificar consultas |
+| **LLM Generación** | Groq (openai/gpt-oss-120b) | Generar respuestas |
+| **LLM Verificación** | Groq (openai/gpt-oss-120b) | Validar calidad |
 | **Framework** | LangChain 1.0+ | Integración de componentes |
 | **UI** | Streamlit | Interfaz web |
 

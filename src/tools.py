@@ -2,15 +2,102 @@
 Tools para el RAG de normativa laboral colombiana.
 Estas herramientas extienden las capacidades del sistema RAG.
 """
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from langchain_core.tools import tool
 from langchain_core.documents import Document
 import re
 from src.config import init_groq_llm
 
 
+# -----------------------------------------------------------------------------
+# ROUTING TOOLS (SCHEMA-ONLY)
+# -----------------------------------------------------------------------------
+# Estas tools NO ejecutan lógica de negocio ni acceden a vectorstore.
+# Su única responsabilidad es exponer un contrato limpio para `llm.bind_tools(...)`
+# durante el routing en `tool_calling_node`.
+#
+# Diferencia clave frente a las tools de ejecución de este mismo archivo:
+# - routing_*: interfaz pública para el LLM (parámetros de negocio serializables).
+# - tools de ejecución: lógica real (búsqueda, cálculo, extracción), con dependencias
+#   internas inyectadas por el runtime (por ejemplo vectorstore).
+#
+# Beneficio: se evita que el modelo vea parámetros internos (ej. vectorstore),
+# lo que reduce errores de validación y acoplamiento con el proveedor del LLM.
+
+
+@tool("resume_document")
+def routing_resume_document(
+    doc_type: str,
+    doc_number: str,
+    doc_year: int | None = None,
+    doc_id: str | None = None,
+) -> str:
+    """Schema de routing para solicitar resumen de documento."""
+    return "routing_only"
+
+
+@tool("calculate_prestaciones_sociales")
+def routing_calculate_prestaciones_sociales(
+    salario_detectado: float | None = None,
+    dias_trabajados: int | None = None,
+    años_servicio: float | None = None,
+) -> str:
+    """Schema de routing para solicitar cálculo de prestaciones."""
+    return "routing_only"
+
+
+@tool("extract_specific_article")
+def routing_extract_specific_article(
+    article_number: str,
+    doc_type: str,
+    doc_number: str,
+    doc_year: int | None = None,
+    doc_id: str | None = None,
+) -> str:
+    """Schema de routing para extracción de artículo específico."""
+    return "routing_only"
+
+
+@tool("compare_documents")
+def routing_compare_documents(doc_id1: str, doc_id2: str, topic: str) -> str:
+    """Schema de routing para comparación entre documentos."""
+    return "routing_only"
+
+
+@tool("search_by_document_type")
+def routing_search_by_document_type(
+    doc_type: str,
+    doc_number: str,
+    doc_year: int | None = None,
+) -> str:
+    """Schema de routing para búsqueda por tipo y número."""
+    return "routing_only"
+
+
+@tool("search_by_year_range")
+def routing_search_by_year_range(start_year: int, end_year: int) -> str:
+    """Schema de routing para búsqueda por rango de años."""
+    return "routing_only"
+
+
+# Lista usada por graph.py para bind_tools en la fase de routing.
+ROUTING_TOOLS = [
+    routing_resume_document,
+    routing_calculate_prestaciones_sociales,
+    routing_extract_specific_article,
+    routing_compare_documents,
+    routing_search_by_document_type,
+    routing_search_by_year_range,
+]
+
+
+# -----------------------------------------------------------------------------
+# EXECUTION TOOLS (LÓGICA REAL)
+# -----------------------------------------------------------------------------
+
+
 @tool
-def search_by_document_type(query: str, doc_type: str, vectorstore) -> List[Document]:
+def search_by_document_type(query: str, doc_type: str, vectorstore: Any = None) -> List[Document]:
     """
     Busca documentos por tipo específico (LEY, DECRETO, SENTENCIA).
     
@@ -22,6 +109,9 @@ def search_by_document_type(query: str, doc_type: str, vectorstore) -> List[Docu
     Returns:
         Lista de documentos del tipo especificado
     """
+
+    if vectorstore is None:
+        raise ValueError("vectorstore is required for search_by_document_type")
 
     # Recupera hasta 10 fragmentos por similaridad y filtra los primeros 5 que coincidan
     # con el tipo de documento indicado. El filtrado es post-búsqueda (no usa filtros de ChromaDB),
@@ -38,7 +128,7 @@ def search_by_document_type(query: str, doc_type: str, vectorstore) -> List[Docu
 
 
 @tool
-def search_by_year_range(query: str, start_year: int, end_year: int, vectorstore) -> List[Document]:
+def search_by_year_range(query: str, start_year: int, end_year: int, vectorstore: Any = None) -> List[Document]:
     """
     Busca documentos dentro de un rango de años.
     
@@ -51,6 +141,9 @@ def search_by_year_range(query: str, start_year: int, end_year: int, vectorstore
     Returns:
         Lista de documentos en el rango de años
     """
+
+    if vectorstore is None:
+        raise ValueError("vectorstore is required for search_by_year_range")
 
     # Similar a search_by_document_type pero filtra por rango de años.
     # Recupera hasta 20 fragmentos para compensar que el filtrado es post-búsqueda.
@@ -121,7 +214,7 @@ def calculate_prestaciones_sociales(
 
 
 @tool
-def extract_specific_article(doc_id: str, article_number: str, vectorstore) -> Optional[str]:
+def extract_specific_article(doc_id: str, article_number: str, vectorstore: Any = None) -> Optional[str]:
     """
     Extrae un artículo específico de un documento legal.
     
@@ -133,6 +226,9 @@ def extract_specific_article(doc_id: str, article_number: str, vectorstore) -> O
     Returns:
         Contenido del artículo o None si no se encuentra
     """
+
+    if vectorstore is None:
+        raise ValueError("vectorstore is required for extract_specific_article")
 
     # Localiza el chunk que contiene un artículo específico dentro de un documento legal.
     # Estrategia en tres niveles de estrictez:
@@ -302,7 +398,7 @@ def select_dynamic_k(query: str, classification: str, tool_results: Optional[Dic
 
 
 @tool
-def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Dict[str, any]:
+def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore: Any = None) -> Dict[str, any]:
     """
     Compara dos documentos legales sobre un tema específico.
     OPTIMIZADO: Limita la cantidad de información para evitar exceder límites del modelo.
@@ -316,6 +412,9 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
     Returns:
         Diccionario con información comparativa (optimizada)
     """
+
+    if vectorstore is None:
+        raise ValueError("vectorstore is required for compare_documents")
 
     # Compara dos documentos legales sobre un tema usando búsquedas independientes por documento.
     # Para controlar el tamaño del contexto enviado al modelo, aplica dos límites duros:
@@ -434,7 +533,7 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore) -> Di
 
 
 @tool
-def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
+def resume_document(doc_id: str, vectorstore: Any = None) -> Dict[str, any]:
     """
     Resume el contenido de un documento específico.
     
@@ -445,6 +544,9 @@ def resume_document(doc_id: str, vectorstore) -> Dict[str, any]:
     Returns:
         Diccionario con el contenido completo del documento y metadatos para que el LLM lo resuma
     """
+
+    if vectorstore is None:
+        raise ValueError("vectorstore is required for resume_document")
 
     # Recupera todos los fragmentos disponibles de un documento para que el LLM los resuma.
     # El contenido acumulado se limita a 15 000 caracteres (MAX_CHARS) para evitar
