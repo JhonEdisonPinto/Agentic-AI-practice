@@ -1,0 +1,302 @@
+@prefix ex: <http://example.org/ontologia-laboral#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:OntologiaLaboral a owl:Ontology ;
+    rdfs:label "Ontologia OWL del Dominio Laboral Colombiano"@es ;
+    rdfs:comment "Ontologia para Knowledge Graph RAG en normativa laboral, construida para la PARTE C de Practica2."@es .
+
+ex:actor_001 a ex:ActorLaboral ;
+    ex:tieneNombre "Actor Sindical A" .
+
+ex:actor_002 a ex:ActorLaboral ;
+    ex:tieneNombre "Actor Empresarial B" .
+
+ex:actor_003 a ex:ActorLaboral ;
+    ex:tieneNombre "Actor Publico C" .
+
+ex:actor_004 a ex:ActorLaboral ;
+    ex:tieneNombre "Actor Social D" .
+
+ex:autoridad_inspeccion_bogota a ex:AutoridadLaboral ;
+    ex:tieneNombre "Inspeccion del Trabajo Bogota" .
+
+ex:autoridad_inspeccion_medellin a ex:AutoridadLaboral ;
+    ex:tieneNombre "Inspeccion del Trabajo Medellin" .
+
+ex:autoridad_mintrabajo a ex:AutoridadLaboral ;
+    ex:tieneNombre "Ministerio del Trabajo" .
+
+ex:autoridad_superintendencia_subsidio a ex:AutoridadLaboral ;
+    ex:tieneNombre "Superintendencia del Subsidio Familiar" .
+
+ex:beneficiaA a owl:ObjectProperty ;
+    rdfs:domain ex:DerechoLaboral ;
+    rdfs:range [ a owl:Class ;
+            owl:unionOf ( ex:Trabajador ex:Empleador ) ] .
+
+ex:contrato_001 a ex:ContratoLaboral ;
+    ex:fechaInicioContrato "2024-01-15"^^xsd:date ;
+    ex:horasSemanales 48 ;
+    ex:salarioMensual 3200000.00 ;
+    ex:tieneEmpleador ex:empleador_alfa ;
+    ex:tieneNombre "Contrato a termino indefinido 001" ;
+    ex:tieneTrabajador ex:trabajador_ana .
+
+ex:contrato_002 a ex:ContratoLaboral ;
+    ex:fechaInicioContrato "2024-03-01"^^xsd:date ;
+    ex:horasSemanales 42 ;
+    ex:salarioMensual 2800000.00 ;
+    ex:tieneEmpleador ex:empleador_beta ;
+    ex:tieneNombre "Contrato teletrabajo 002" ;
+    ex:tieneTrabajador ex:trabajador_carlos .
+
+ex:contrato_003 a ex:ContratoLaboral ;
+    ex:fechaInicioContrato "2024-06-01"^^xsd:date ;
+    ex:horasSemanales 46 ;
+    ex:salarioMensual 2500000.00 ;
+    ex:tieneEmpleador ex:empleador_gamma ;
+    ex:tieneNombre "Contrato fijo 003" ;
+    ex:tieneTrabajador ex:trabajador_luisa .
+
+ex:contrato_004 a ex:ContratoLaboral ;
+    ex:fechaInicioContrato "2024-08-15"^^xsd:date ;
+    ex:horasSemanales 40 ;
+    ex:salarioMensual 1500000.00 ;
+    ex:tieneEmpleador ex:empleador_delta ;
+    ex:tieneNombre "Contrato aprendizaje 004" ;
+    ex:tieneTrabajador ex:trabajador_mario .
+
+ex:estableceSancion a owl:ObjectProperty ;
+    rdfs:domain ex:NormaJuridica ;
+    rdfs:range ex:SancionLaboral .
+
+ex:fechaInicioContrato a owl:DatatypeProperty ;
+    rdfs:domain ex:ContratoLaboral ;
+    rdfs:range xsd:date .
+
+ex:horasSemanales a owl:DatatypeProperty ;
+    rdfs:domain ex:ContratoLaboral ;
+    rdfs:range xsd:integer .
+
+ex:imponeSancionA a owl:ObjectProperty ;
+    rdfs:domain ex:AutoridadLaboral ;
+    rdfs:range ex:ActorLaboral ;
+    rdfs:subPropertyOf ex:afectaAActor .
+
+ex:ley_2088_2021 a ex:LeyLaboral ;
+    ex:imponeObligacion ex:obligacion_prevencion_riesgos ;
+    ex:otorgaDerecho ex:derecho_descanso ;
+    ex:tieneAnioPublicacion "2021"^^xsd:gYear ;
+    ex:tieneNombre "Ley 2088 de 2021" ;
+    ex:tieneNumeroNorma "2088" .
+
+ex:ley_2114_2021 a ex:LeyLaboral ;
+    ex:imponeObligacion ex:obligacion_otorgar_descansos ;
+    ex:otorgaDerecho ex:derecho_licencia_parental ;
+    ex:tieneAnioPublicacion "2021"^^xsd:gYear ;
+    ex:tieneNombre "Ley 2114 de 2021" ;
+    ex:tieneNumeroNorma "2114" .
+
+ex:ley_2209_2022 a ex:LeyLaboral ;
+    ex:imponeObligacion ex:obligacion_afiliacion_seguridad_social ;
+    ex:otorgaDerecho ex:derecho_seguridad_social ;
+    ex:tieneAnioPublicacion "2022"^^xsd:gYear ;
+    ex:tieneNombre "Ley 2209 de 2022" ;
+    ex:tieneNumeroNorma "2209" .
+
+ex:ley_50_1990 a ex:LeyLaboral ;
+    ex:imponeObligacion ex:obligacion_pago_salario ;
+    ex:otorgaDerecho ex:derecho_descanso,
+        ex:derecho_salario_justo ;
+    ex:tieneAnioPublicacion "1990"^^xsd:gYear ;
+    ex:tieneNombre "Ley 50 de 1990" ;
+    ex:tieneNumeroNorma "50" .
+
+ex:norma_general_001 a ex:NormaJuridica ;
+    ex:tieneAnioPublicacion "1950"^^xsd:gYear ;
+    ex:tieneNombre "Codigo Sustantivo del Trabajo" ;
+    ex:tieneNumeroNorma "CST" .
+
+ex:norma_general_002 a ex:NormaJuridica ;
+    ex:tieneAnioPublicacion "1991"^^xsd:gYear ;
+    ex:tieneNombre "Constitucion Politica de Colombia" ;
+    ex:tieneNumeroNorma "CP" .
+
+ex:norma_general_003 a ex:NormaJuridica ;
+    ex:tieneAnioPublicacion "1981"^^xsd:gYear ;
+    ex:tieneNombre "Convenio OIT 155" ;
+    ex:tieneNumeroNorma "OIT-155" .
+
+ex:norma_general_004 a ex:NormaJuridica ;
+    ex:tieneAnioPublicacion "2006"^^xsd:gYear ;
+    ex:tieneNombre "Convenio OIT 187" ;
+    ex:tieneNumeroNorma "OIT-187" .
+
+ex:otorgaDerecho a owl:ObjectProperty ;
+    rdfs:domain ex:NormaJuridica ;
+    rdfs:range ex:DerechoLaboral ;
+    owl:inverseOf ex:esOtorgadoPor .
+
+ex:salarioMensual a owl:DatatypeProperty ;
+    rdfs:domain ex:ContratoLaboral ;
+    rdfs:range xsd:decimal .
+
+ex:sancion_cierre_establecimiento a ex:SancionLaboral ;
+    ex:tieneNombre "Cierre de establecimiento" .
+
+ex:sancion_multa_grave a ex:SancionLaboral ;
+    ex:tieneNombre "Multa grave por reincidencia" .
+
+ex:sancion_multa_leve a ex:SancionLaboral ;
+    ex:tieneNombre "Multa leve por incumplimiento" .
+
+ex:sancion_suspension_actividad a ex:SancionLaboral ;
+    ex:tieneNombre "Suspension temporal de actividad" .
+
+ex:supervisaCumplimiento a owl:ObjectProperty ;
+    rdfs:domain ex:AutoridadLaboral ;
+    rdfs:range ex:ObligacionLaboral .
+
+ex:tieneAnioPublicacion a owl:DatatypeProperty ;
+    rdfs:domain ex:NormaJuridica ;
+    rdfs:range xsd:gYear .
+
+ex:tieneDescripcion a owl:DatatypeProperty ;
+    rdfs:domain owl:Thing ;
+    rdfs:range xsd:string .
+
+ex:tieneNombre a owl:DatatypeProperty ;
+    rdfs:domain owl:Thing ;
+    rdfs:range xsd:string .
+
+ex:tieneNumeroNorma a owl:DatatypeProperty ;
+    rdfs:domain ex:NormaJuridica ;
+    rdfs:range xsd:string .
+
+ex:tieneTrabajador a owl:ObjectProperty ;
+    rdfs:domain ex:ContratoLaboral ;
+    rdfs:range ex:Trabajador ;
+    rdfs:subPropertyOf ex:tieneRelacionConActor ;
+    owl:inverseOf ex:participaEnContrato .
+
+ex:afectaAActor a owl:ObjectProperty ;
+    rdfs:domain ex:SancionLaboral ;
+    rdfs:range ex:ActorLaboral .
+
+ex:derecho_licencia_parental a ex:DerechoLaboral ;
+    ex:tieneNombre "Derecho a licencias parentales" .
+
+ex:derecho_salario_justo a ex:DerechoLaboral ;
+    ex:tieneNombre "Derecho al salario justo" .
+
+ex:derecho_seguridad_social a ex:DerechoLaboral ;
+    ex:tieneNombre "Derecho a la seguridad social" .
+
+ex:empleador_alfa a ex:Empleador ;
+    ex:tieneNombre "Industria Alfa S.A.S" .
+
+ex:empleador_beta a ex:Empleador ;
+    ex:tieneNombre "Servicios Beta S.A.S" .
+
+ex:empleador_delta a ex:Empleador ;
+    ex:tieneNombre "Tecnologia Delta S.A.S" .
+
+ex:empleador_gamma a ex:Empleador ;
+    ex:tieneNombre "Logistica Gamma S.A.S" .
+
+ex:esOtorgadoPor a owl:ObjectProperty ;
+    rdfs:domain ex:DerechoLaboral ;
+    rdfs:range ex:NormaJuridica .
+
+ex:imponeObligacion a owl:ObjectProperty ;
+    rdfs:domain ex:NormaJuridica ;
+    rdfs:range ex:ObligacionLaboral .
+
+ex:obligacion_afiliacion_seguridad_social a ex:ObligacionLaboral ;
+    ex:tieneNombre "Afiliar a seguridad social" .
+
+ex:obligacion_otorgar_descansos a ex:ObligacionLaboral ;
+    ex:tieneNombre "Otorgar descansos y vacaciones" .
+
+ex:obligacion_pago_salario a ex:ObligacionLaboral ;
+    ex:tieneNombre "Pagar salario oportunamente" .
+
+ex:obligacion_prevencion_riesgos a ex:ObligacionLaboral ;
+    ex:tieneNombre "Prevenir riesgos laborales" .
+
+ex:participaEnContrato a owl:ObjectProperty ;
+    rdfs:domain ex:Trabajador ;
+    rdfs:range ex:ContratoLaboral .
+
+ex:tieneEmpleador a owl:ObjectProperty ;
+    rdfs:domain ex:ContratoLaboral ;
+    rdfs:range ex:Empleador ;
+    rdfs:subPropertyOf ex:tieneRelacionConActor .
+
+ex:trabajador_ana a ex:Trabajador ;
+    ex:tieneNombre "Ana Ruiz" .
+
+ex:trabajador_carlos a ex:Trabajador ;
+    ex:tieneNombre "Carlos Mejia" .
+
+ex:trabajador_luisa a ex:Trabajador ;
+    ex:tieneNombre "Luisa Gomez" .
+
+ex:trabajador_mario a ex:Trabajador ;
+    ex:tieneNombre "Mario Perez" .
+
+ex:derecho_descanso a ex:DerechoLaboral ;
+    ex:tieneNombre "Derecho al descanso" .
+
+ex:tieneRelacionConActor a owl:ObjectProperty ;
+    rdfs:domain ex:ContratoLaboral ;
+    rdfs:range ex:ActorLaboral .
+
+ex:LeyLaboral a owl:Class ;
+    rdfs:label "Ley Laboral"@es ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:onProperty ex:imponeObligacion ;
+            owl:someValuesFrom ex:ObligacionLaboral ],
+        ex:NormaJuridica .
+
+ex:AutoridadLaboral a owl:Class ;
+    rdfs:label "Autoridad Laboral"@es ;
+    rdfs:subClassOf ex:ActorLaboral .
+
+ex:SancionLaboral a owl:Class ;
+    rdfs:label "Sancion Laboral"@es .
+
+ex:DerechoLaboral a owl:Class ;
+    rdfs:label "Derecho Laboral"@es ;
+    owl:disjointWith ex:ObligacionLaboral .
+
+ex:Empleador a owl:Class ;
+    rdfs:label "Empleador"@es ;
+    rdfs:subClassOf ex:ActorLaboral .
+
+ex:Trabajador a owl:Class ;
+    rdfs:label "Trabajador"@es ;
+    rdfs:subClassOf ex:ActorLaboral ;
+    owl:disjointWith ex:Empleador .
+
+ex:ObligacionLaboral a owl:Class ;
+    rdfs:label "Obligacion Laboral"@es .
+
+ex:ActorLaboral a owl:Class ;
+    rdfs:label "Actor Laboral"@es .
+
+ex:ContratoLaboral a owl:Class ;
+    rdfs:label "Contrato Laboral"@es ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:cardinality "1"^^xsd:nonNegativeInteger ;
+            owl:onProperty ex:tieneEmpleador ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom ex:ActorLaboral ;
+            owl:onProperty ex:tieneRelacionConActor ] .
+
+ex:NormaJuridica a owl:Class ;
+    rdfs:label "Norma Juridica"@es .
+
