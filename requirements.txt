@@ -6,6 +6,7 @@ langchain-community
 langchain-google-genai
 langchain-groq
 langchain-openai
+langchain-classic
 langgraph
 chromadb
 python-dotenv

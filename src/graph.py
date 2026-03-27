@@ -18,6 +18,7 @@ from langgraph.graph import END, StateGraph
 from src.config import init_embeddings, init_groq_llm, init_verification_llm
 from src.tools import ROUTING_TOOLS
 from src.vectorstore import load_chroma_index
+from src.query_transformer import transform_query
 import os
 import re
 
@@ -28,6 +29,8 @@ class RAGState(TypedDict):
     # metadata acumula trazabilidad (modelo usado, scores, errores) sin afectar el flujo principal.
     query: str  # Consulta original del usuario
     classification: str  # Clasificación de la consulta
+    query_type: Optional[str]  # Tipo de transformación: "hyde", "decomposition", "multi_query"
+    transformed_queries: Optional[List[str]]  # Consultas transformadas/generadas
     documents: List[Document]  # Documentos recuperados
     tool_results: Optional[Dict[str, Any]]  # Resultados de tools ejecutadas
     answer: str  # Respuesta generada
@@ -100,6 +103,68 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
     
     state["classification"] = classification
     state["metadata"] = {"classification_method": "groq_llama_3_3_70b_versatile"}
+    
+    return state
+
+
+def query_transform_node(state: RAGState) -> RAGState:
+    """
+    Transforma la consulta aplicando HyDE o Query Decomposition.
+    
+    Estrategias:
+    - HyDE: Para preguntas cortas o ambiguas, genera un documento hipotético
+    - Query Decomposition: Para consultas complejas, divide en sub-consultas
+    - Multi-Query: Genera múltiples variaciones de la pregunta
+    
+    Este nodo se salta para consultas generales.
+    """
+    query = state["query"]
+    classification = state.get("classification", "general")
+    
+    # Saltar transformación para consultas generales
+    if classification in ["general"]:
+        print(f"\n✨ TRANSFORMACIÓN DE CONSULTA: OMITIDA (consulta general)")
+        state["query_type"] = "none"
+        state["transformed_queries"] = [query]
+        state.setdefault("metadata", {})["query_transform_skipped"] = True
+        return state
+    
+    try:
+        print(f"\n✨ TRANSFORMACIÓN DE CONSULTA")
+        
+        # Cargar vectorstore para transformación
+        persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
+        collection_name = os.getenv("CHROMA_COLLECTION_NAME", "normativa_laboral")
+        embedding_fn = init_embeddings()
+        vectorstore = load_chroma_index(persist_dir, embedding_fn, collection_name)
+        
+        # Inicializar LLM para transformación
+        llm = init_groq_llm(temperature=0.1)
+        
+        # Aplicar transformación de consulta
+        result = transform_query(
+            question=query,
+            llm=llm,
+            vectorstore=vectorstore,
+            k=4
+        )
+        
+        # Actualizar estado con resultados
+        state["query_type"] = result["query_type"]
+        state["transformed_queries"] = result["transformed_queries"]
+        
+        # Guardar metadata de la transformación
+        state.setdefault("metadata", {})["query_transform"] = result["metadata"]
+        
+        print(f"   ✓ Tipo de transformación: {state['query_type']}")
+        print(f"   ✓ Consultas generadas: {len(state['transformed_queries'])}")
+        
+    except Exception as e:
+        print(f"   ⚠️ Error en transformación de consulta: {str(e)[:100]}")
+        # Fallback: usar consulta original sin transformación
+        state["query_type"] = "fallback"
+        state["transformed_queries"] = [query]
+        state.setdefault("metadata", {})["query_transform_error"] = str(e)
     
     return state
 
@@ -1368,34 +1433,35 @@ Instrucciones para el verificador (NO incluir en la salida):
 
 def build_graph():
     """
-    Construye y compila el grafo de LangGraph con 5 nodos y tools integradas.
+    Construye y compila el grafo de LangGraph con 6 nodos y tools integradas.
     """
     graph = StateGraph(RAGState)
 
     # Agregar nodos
     graph.add_node("classify", classify_node)
+    graph.add_node("query_transform", query_transform_node)
     graph.add_node("tool_calling", tool_calling_node)
     graph.add_node("retrieve", retrieve_node)
     graph.add_node("generate", generate_node)
     graph.add_node("verify", verify_node)
 
     # Definir flujo con tools
-    # El grafo es completamente lineal, sin edges condicionales.
-    # Toda la lógica de routing está encapsulada dentro de los nodos (tool_calling, retrieve).
-    # Esto simplifica el grafo pero concentra responsabilidad en los nodos intermedios.
+    # El grafo es completamente lineal con un nodo de transformación de consultas.
+    # Nota: query_transform se ejecuta para todas las consultas no-generales.
     graph.set_entry_point("classify")
     
     # Edge condicional desde classify
-    # Si es general, saltamos tool_calling y retrieve, y vamos directo a generate
+    # Si es general, saltamos query_transform, tool_calling y retrieve, y vamos directo a generate
     graph.add_conditional_edges(
         "classify",
-        lambda state: "generate" if state.get("classification") == "general" else "tool_calling",
+        lambda state: "generate" if state.get("classification") == "general" else "query_transform",
         {
             "generate": "generate",
-            "tool_calling": "tool_calling"
+            "query_transform": "query_transform"
         }
     )
     
+    graph.add_edge("query_transform", "tool_calling")
     graph.add_edge("tool_calling", "retrieve")
     graph.add_edge("retrieve", "generate")
     graph.add_edge("generate", "verify")
