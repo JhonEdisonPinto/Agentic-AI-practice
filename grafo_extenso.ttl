@@ -1,0 +1,1060 @@
+@prefix ex: <http://example.org/ontologia-laboral#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:OntologiaLaboral a owl:Ontology ;
+    rdfs:label "Ontologia OWL del Dominio Laboral Colombiano"@es ;
+    rdfs:comment "Ontologia para Knowledge Graph RAG en normativa laboral, construida para la PARTE C de Practica2."@es ;
+    owl:sameAs ex:OntologiaLaboral .
+
+ex:actor_001 a ex:ActorLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Actor Sindical A" ;
+    owl:sameAs ex:actor_001 .
+
+ex:actor_002 a ex:ActorLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Actor Empresarial B" ;
+    owl:sameAs ex:actor_002 .
+
+ex:actor_003 a ex:ActorLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Actor Publico C" ;
+    owl:sameAs ex:actor_003 .
+
+ex:actor_004 a ex:ActorLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Actor Social D" ;
+    owl:sameAs ex:actor_004 .
+
+ex:autoridad_inspeccion_bogota a ex:ActorLaboral,
+        ex:AutoridadLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Inspeccion del Trabajo Bogota" ;
+    owl:sameAs ex:autoridad_inspeccion_bogota .
+
+ex:autoridad_inspeccion_medellin a ex:ActorLaboral,
+        ex:AutoridadLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Inspeccion del Trabajo Medellin" ;
+    owl:sameAs ex:autoridad_inspeccion_medellin .
+
+ex:autoridad_mintrabajo a ex:ActorLaboral,
+        ex:AutoridadLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Ministerio del Trabajo" ;
+    owl:sameAs ex:autoridad_mintrabajo .
+
+ex:autoridad_superintendencia_subsidio a ex:ActorLaboral,
+        ex:AutoridadLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Superintendencia del Subsidio Familiar" ;
+    owl:sameAs ex:autoridad_superintendencia_subsidio .
+
+ex:norma_general_001 a ex:NormaJuridica,
+        owl:Thing ;
+    ex:tieneAnioPublicacion "1950"^^xsd:gYear ;
+    ex:tieneNombre "Codigo Sustantivo del Trabajo" ;
+    ex:tieneNumeroNorma "CST" ;
+    owl:sameAs ex:norma_general_001 .
+
+ex:norma_general_002 a ex:NormaJuridica,
+        owl:Thing ;
+    ex:tieneAnioPublicacion "1991"^^xsd:gYear ;
+    ex:tieneNombre "Constitucion Politica de Colombia" ;
+    ex:tieneNumeroNorma "CP" ;
+    owl:sameAs ex:norma_general_002 .
+
+ex:norma_general_003 a ex:NormaJuridica,
+        owl:Thing ;
+    ex:tieneAnioPublicacion "1981"^^xsd:gYear ;
+    ex:tieneNombre "Convenio OIT 155" ;
+    ex:tieneNumeroNorma "OIT-155" ;
+    owl:sameAs ex:norma_general_003 .
+
+ex:norma_general_004 a ex:NormaJuridica,
+        owl:Thing ;
+    ex:tieneAnioPublicacion "2006"^^xsd:gYear ;
+    ex:tieneNombre "Convenio OIT 187" ;
+    ex:tieneNumeroNorma "OIT-187" ;
+    owl:sameAs ex:norma_general_004 .
+
+ex:sancion_cierre_establecimiento a ex:SancionLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Cierre de establecimiento" ;
+    owl:sameAs ex:sancion_cierre_establecimiento .
+
+ex:sancion_multa_grave a ex:SancionLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Multa grave por reincidencia" ;
+    owl:sameAs ex:sancion_multa_grave .
+
+ex:sancion_multa_leve a ex:SancionLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Multa leve por incumplimiento" ;
+    owl:sameAs ex:sancion_multa_leve .
+
+ex:sancion_suspension_actividad a ex:SancionLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Suspension temporal de actividad" ;
+    owl:sameAs ex:sancion_suspension_actividad .
+
+rdf:HTML a rdfs:Datatype ;
+    owl:sameAs rdf:HTML .
+
+rdf:PlainLiteral a rdfs:Datatype ;
+    owl:sameAs rdf:PlainLiteral .
+
+rdf:XMLLiteral a rdfs:Datatype ;
+    owl:sameAs rdf:XMLLiteral .
+
+rdf:first owl:sameAs rdf:first .
+
+rdf:langString a rdfs:Datatype ;
+    owl:sameAs rdf:langString .
+
+rdf:rest owl:sameAs rdf:rest .
+
+rdf:type owl:sameAs rdf:type .
+
+rdfs:Literal a rdfs:Datatype ;
+    owl:sameAs rdfs:Literal .
+
+rdfs:comment a owl:AnnotationProperty ;
+    owl:sameAs rdfs:comment .
+
+rdfs:domain owl:sameAs rdfs:domain .
+
+rdfs:isDefinedBy a owl:AnnotationProperty ;
+    owl:sameAs rdfs:isDefinedBy .
+
+rdfs:label a owl:AnnotationProperty ;
+    owl:sameAs rdfs:label .
+
+rdfs:range owl:sameAs rdfs:range .
+
+rdfs:seeAlso a owl:AnnotationProperty ;
+    owl:sameAs rdfs:seeAlso .
+
+rdfs:subClassOf owl:sameAs rdfs:subClassOf .
+
+rdfs:subPropertyOf owl:sameAs rdfs:subPropertyOf .
+
+xsd:NCName a rdfs:Datatype ;
+    owl:sameAs xsd:NCName .
+
+xsd:NMTOKEN a rdfs:Datatype ;
+    owl:sameAs xsd:NMTOKEN .
+
+xsd:Name a rdfs:Datatype ;
+    owl:sameAs xsd:Name .
+
+xsd:anyURI a rdfs:Datatype ;
+    owl:sameAs xsd:anyURI .
+
+xsd:base64Binary a rdfs:Datatype ;
+    owl:sameAs xsd:base64Binary .
+
+xsd:boolean a rdfs:Datatype ;
+    owl:sameAs xsd:boolean .
+
+xsd:byte a rdfs:Datatype ;
+    owl:sameAs xsd:byte .
+
+xsd:dateTime a rdfs:Datatype ;
+    owl:sameAs xsd:dateTime .
+
+xsd:dateTimeStamp a rdfs:Datatype ;
+    owl:sameAs xsd:dateTimeStamp .
+
+xsd:double a rdfs:Datatype ;
+    owl:sameAs xsd:double .
+
+xsd:float a rdfs:Datatype ;
+    owl:sameAs xsd:float .
+
+xsd:hexBinary a rdfs:Datatype ;
+    owl:sameAs xsd:hexBinary .
+
+xsd:int a rdfs:Datatype ;
+    owl:sameAs xsd:int .
+
+xsd:language a rdfs:Datatype ;
+    owl:sameAs xsd:language .
+
+xsd:long a rdfs:Datatype ;
+    owl:sameAs xsd:long .
+
+xsd:negativeInteger a rdfs:Datatype ;
+    owl:sameAs xsd:negativeInteger .
+
+xsd:nonPositiveInteger a rdfs:Datatype ;
+    owl:sameAs xsd:nonPositiveInteger .
+
+xsd:normalizedString a rdfs:Datatype ;
+    owl:sameAs xsd:normalizedString .
+
+xsd:positiveInteger a rdfs:Datatype ;
+    owl:sameAs xsd:positiveInteger .
+
+xsd:short a rdfs:Datatype ;
+    owl:sameAs xsd:short .
+
+xsd:time a rdfs:Datatype ;
+    owl:sameAs xsd:time .
+
+xsd:token a rdfs:Datatype ;
+    owl:sameAs xsd:token .
+
+xsd:unsignedByte a rdfs:Datatype ;
+    owl:sameAs xsd:unsignedByte .
+
+xsd:unsignedInt a rdfs:Datatype ;
+    owl:sameAs xsd:unsignedInt .
+
+xsd:unsignedLong a rdfs:Datatype ;
+    owl:sameAs xsd:unsignedLong .
+
+xsd:unsignedShort a rdfs:Datatype ;
+    owl:sameAs xsd:unsignedShort .
+
+owl:allValuesFrom owl:sameAs owl:allValuesFrom .
+
+owl:backwardCompatibleWith a owl:AnnotationProperty ;
+    owl:sameAs owl:backwardCompatibleWith .
+
+owl:cardinality owl:sameAs owl:cardinality .
+
+owl:deprecated a owl:AnnotationProperty ;
+    owl:sameAs owl:deprecated .
+
+owl:disjointWith owl:sameAs owl:disjointWith .
+
+owl:equivalentClass owl:sameAs owl:equivalentClass .
+
+owl:equivalentProperty owl:sameAs owl:equivalentProperty .
+
+owl:incompatibleWith a owl:AnnotationProperty ;
+    owl:sameAs owl:incompatibleWith .
+
+owl:inverseOf owl:sameAs owl:inverseOf .
+
+owl:onProperty owl:sameAs owl:onProperty .
+
+owl:priorVersion a owl:AnnotationProperty ;
+    owl:sameAs owl:priorVersion .
+
+owl:sameAs owl:sameAs owl:sameAs .
+
+owl:someValuesFrom owl:sameAs owl:someValuesFrom .
+
+owl:unionOf owl:sameAs owl:unionOf .
+
+owl:versionInfo a owl:AnnotationProperty ;
+    owl:sameAs owl:versionInfo .
+
+ex:contrato_001 a _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    ex:fechaInicioContrato "2024-01-15"^^xsd:date ;
+    ex:horasSemanales 48 ;
+    ex:salarioMensual 3200000.00 ;
+    ex:tieneEmpleador ex:empleador_alfa ;
+    ex:tieneNombre "Contrato a termino indefinido 001" ;
+    ex:tieneRelacionConActor ex:empleador_alfa,
+        ex:trabajador_ana ;
+    ex:tieneTrabajador ex:trabajador_ana ;
+    owl:sameAs ex:contrato_001 .
+
+ex:contrato_002 a _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    ex:fechaInicioContrato "2024-03-01"^^xsd:date ;
+    ex:horasSemanales 42 ;
+    ex:salarioMensual 2800000.00 ;
+    ex:tieneEmpleador ex:empleador_beta ;
+    ex:tieneNombre "Contrato teletrabajo 002" ;
+    ex:tieneRelacionConActor ex:empleador_beta,
+        ex:trabajador_carlos ;
+    ex:tieneTrabajador ex:trabajador_carlos ;
+    owl:sameAs ex:contrato_002 .
+
+ex:contrato_003 a _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    ex:fechaInicioContrato "2024-06-01"^^xsd:date ;
+    ex:horasSemanales 46 ;
+    ex:salarioMensual 2500000.00 ;
+    ex:tieneEmpleador ex:empleador_gamma ;
+    ex:tieneNombre "Contrato fijo 003" ;
+    ex:tieneRelacionConActor ex:empleador_gamma,
+        ex:trabajador_luisa ;
+    ex:tieneTrabajador ex:trabajador_luisa ;
+    owl:sameAs ex:contrato_003 .
+
+ex:contrato_004 a _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    ex:fechaInicioContrato "2024-08-15"^^xsd:date ;
+    ex:horasSemanales 40 ;
+    ex:salarioMensual 1500000.00 ;
+    ex:tieneEmpleador ex:empleador_delta ;
+    ex:tieneNombre "Contrato aprendizaje 004" ;
+    ex:tieneRelacionConActor ex:empleador_delta,
+        ex:trabajador_mario ;
+    ex:tieneTrabajador ex:trabajador_mario ;
+    owl:sameAs ex:contrato_004 .
+
+ex:derecho_licencia_parental a ex:DerechoLaboral,
+        owl:Thing ;
+    ex:esOtorgadoPor ex:ley_2114_2021 ;
+    ex:tieneNombre "Derecho a licencias parentales" ;
+    owl:sameAs ex:derecho_licencia_parental .
+
+ex:derecho_salario_justo a ex:DerechoLaboral,
+        owl:Thing ;
+    ex:esOtorgadoPor ex:ley_50_1990 ;
+    ex:tieneNombre "Derecho al salario justo" ;
+    owl:sameAs ex:derecho_salario_justo .
+
+ex:derecho_seguridad_social a ex:DerechoLaboral,
+        owl:Thing ;
+    ex:esOtorgadoPor ex:ley_2209_2022 ;
+    ex:tieneNombre "Derecho a la seguridad social" ;
+    owl:sameAs ex:derecho_seguridad_social .
+
+ex:ley_2088_2021 a _:n868c7951d83b4370b132d50a8e3333b2b4,
+        ex:LeyLaboral,
+        ex:NormaJuridica,
+        owl:Thing ;
+    ex:imponeObligacion ex:obligacion_prevencion_riesgos ;
+    ex:otorgaDerecho ex:derecho_descanso ;
+    ex:tieneAnioPublicacion "2021"^^xsd:gYear ;
+    ex:tieneNombre "Ley 2088 de 2021" ;
+    ex:tieneNumeroNorma "2088" ;
+    owl:sameAs ex:ley_2088_2021 .
+
+ex:ley_2114_2021 a _:n868c7951d83b4370b132d50a8e3333b2b4,
+        ex:LeyLaboral,
+        ex:NormaJuridica,
+        owl:Thing ;
+    ex:imponeObligacion ex:obligacion_otorgar_descansos ;
+    ex:otorgaDerecho ex:derecho_licencia_parental ;
+    ex:tieneAnioPublicacion "2021"^^xsd:gYear ;
+    ex:tieneNombre "Ley 2114 de 2021" ;
+    ex:tieneNumeroNorma "2114" ;
+    owl:sameAs ex:ley_2114_2021 .
+
+ex:ley_2209_2022 a _:n868c7951d83b4370b132d50a8e3333b2b4,
+        ex:LeyLaboral,
+        ex:NormaJuridica,
+        owl:Thing ;
+    ex:imponeObligacion ex:obligacion_afiliacion_seguridad_social ;
+    ex:otorgaDerecho ex:derecho_seguridad_social ;
+    ex:tieneAnioPublicacion "2022"^^xsd:gYear ;
+    ex:tieneNombre "Ley 2209 de 2022" ;
+    ex:tieneNumeroNorma "2209" ;
+    owl:sameAs ex:ley_2209_2022 .
+
+ex:obligacion_afiliacion_seguridad_social a ex:ObligacionLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Afiliar a seguridad social" ;
+    owl:sameAs ex:obligacion_afiliacion_seguridad_social .
+
+ex:obligacion_otorgar_descansos a ex:ObligacionLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Otorgar descansos y vacaciones" ;
+    owl:sameAs ex:obligacion_otorgar_descansos .
+
+ex:obligacion_pago_salario a ex:ObligacionLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Pagar salario oportunamente" ;
+    owl:sameAs ex:obligacion_pago_salario .
+
+ex:obligacion_prevencion_riesgos a ex:ObligacionLaboral,
+        owl:Thing ;
+    ex:tieneNombre "Prevenir riesgos laborales" ;
+    owl:sameAs ex:obligacion_prevencion_riesgos .
+
+() owl:sameAs () .
+
+xsd:nonNegativeInteger a rdfs:Datatype ;
+    owl:sameAs xsd:nonNegativeInteger .
+
+owl:Ontology owl:sameAs owl:Ontology .
+
+"2024-01-15"^^xsd:date a xsd:date ;
+    owl:sameAs "2024-01-15"^^xsd:date .
+
+"2024-03-01"^^xsd:date a xsd:date ;
+    owl:sameAs "2024-03-01"^^xsd:date .
+
+"2024-06-01"^^xsd:date a xsd:date ;
+    owl:sameAs "2024-06-01"^^xsd:date .
+
+"2024-08-15"^^xsd:date a xsd:date ;
+    owl:sameAs "2024-08-15"^^xsd:date .
+
+1500000.00 a xsd:decimal ;
+    owl:sameAs 1500000.00 .
+
+2500000.00 a xsd:decimal ;
+    owl:sameAs 2500000.00 .
+
+2800000.00 a xsd:decimal ;
+    owl:sameAs 2800000.00 .
+
+3200000.00 a xsd:decimal ;
+    owl:sameAs 3200000.00 .
+
+"1950"^^xsd:gYear a xsd:gYear ;
+    owl:sameAs "1950"^^xsd:gYear .
+
+"1981"^^xsd:gYear a xsd:gYear ;
+    owl:sameAs "1981"^^xsd:gYear .
+
+"1990"^^xsd:gYear a xsd:gYear ;
+    owl:sameAs "1990"^^xsd:gYear .
+
+"1991"^^xsd:gYear a xsd:gYear ;
+    owl:sameAs "1991"^^xsd:gYear .
+
+"2006"^^xsd:gYear a xsd:gYear ;
+    owl:sameAs "2006"^^xsd:gYear .
+
+"2022"^^xsd:gYear a xsd:gYear ;
+    owl:sameAs "2022"^^xsd:gYear .
+
+"1"^^xsd:nonNegativeInteger a xsd:decimal,
+        xsd:integer,
+        xsd:nonNegativeInteger ;
+    owl:sameAs "1"^^xsd:nonNegativeInteger .
+
+40 a xsd:decimal,
+        xsd:integer ;
+    owl:sameAs 40 .
+
+42 a xsd:decimal,
+        xsd:integer ;
+    owl:sameAs 42 .
+
+46 a xsd:decimal,
+        xsd:integer ;
+    owl:sameAs 46 .
+
+48 a xsd:decimal,
+        xsd:integer ;
+    owl:sameAs 48 .
+
+"2088" a xsd:string ;
+    owl:sameAs "2088" .
+
+"2114" a xsd:string ;
+    owl:sameAs "2114" .
+
+"2209" a xsd:string ;
+    owl:sameAs "2209" .
+
+"50" a xsd:string ;
+    owl:sameAs "50" .
+
+"Actor Empresarial B" a xsd:string ;
+    owl:sameAs "Actor Empresarial B" .
+
+"Actor Publico C" a xsd:string ;
+    owl:sameAs "Actor Publico C" .
+
+"Actor Sindical A" a xsd:string ;
+    owl:sameAs "Actor Sindical A" .
+
+"Actor Social D" a xsd:string ;
+    owl:sameAs "Actor Social D" .
+
+"Afiliar a seguridad social" a xsd:string ;
+    owl:sameAs "Afiliar a seguridad social" .
+
+"Ana Ruiz" a xsd:string ;
+    owl:sameAs "Ana Ruiz" .
+
+"CP" a xsd:string ;
+    owl:sameAs "CP" .
+
+"CST" a xsd:string ;
+    owl:sameAs "CST" .
+
+"Carlos Mejia" a xsd:string ;
+    owl:sameAs "Carlos Mejia" .
+
+"Cierre de establecimiento" a xsd:string ;
+    owl:sameAs "Cierre de establecimiento" .
+
+"Codigo Sustantivo del Trabajo" a xsd:string ;
+    owl:sameAs "Codigo Sustantivo del Trabajo" .
+
+"Constitucion Politica de Colombia" a xsd:string ;
+    owl:sameAs "Constitucion Politica de Colombia" .
+
+"Contrato a termino indefinido 001" a xsd:string ;
+    owl:sameAs "Contrato a termino indefinido 001" .
+
+"Contrato aprendizaje 004" a xsd:string ;
+    owl:sameAs "Contrato aprendizaje 004" .
+
+"Contrato fijo 003" a xsd:string ;
+    owl:sameAs "Contrato fijo 003" .
+
+"Contrato teletrabajo 002" a xsd:string ;
+    owl:sameAs "Contrato teletrabajo 002" .
+
+"Convenio OIT 155" a xsd:string ;
+    owl:sameAs "Convenio OIT 155" .
+
+"Convenio OIT 187" a xsd:string ;
+    owl:sameAs "Convenio OIT 187" .
+
+"Derecho a la seguridad social" a xsd:string ;
+    owl:sameAs "Derecho a la seguridad social" .
+
+"Derecho a licencias parentales" a xsd:string ;
+    owl:sameAs "Derecho a licencias parentales" .
+
+"Derecho al descanso" a xsd:string ;
+    owl:sameAs "Derecho al descanso" .
+
+"Derecho al salario justo" a xsd:string ;
+    owl:sameAs "Derecho al salario justo" .
+
+"Industria Alfa S.A.S" a xsd:string ;
+    owl:sameAs "Industria Alfa S.A.S" .
+
+"Inspeccion del Trabajo Bogota" a xsd:string ;
+    owl:sameAs "Inspeccion del Trabajo Bogota" .
+
+"Inspeccion del Trabajo Medellin" a xsd:string ;
+    owl:sameAs "Inspeccion del Trabajo Medellin" .
+
+"Ley 2088 de 2021" a xsd:string ;
+    owl:sameAs "Ley 2088 de 2021" .
+
+"Ley 2114 de 2021" a xsd:string ;
+    owl:sameAs "Ley 2114 de 2021" .
+
+"Ley 2209 de 2022" a xsd:string ;
+    owl:sameAs "Ley 2209 de 2022" .
+
+"Ley 50 de 1990" a xsd:string ;
+    owl:sameAs "Ley 50 de 1990" .
+
+"Logistica Gamma S.A.S" a xsd:string ;
+    owl:sameAs "Logistica Gamma S.A.S" .
+
+"Luisa Gomez" a xsd:string ;
+    owl:sameAs "Luisa Gomez" .
+
+"Mario Perez" a xsd:string ;
+    owl:sameAs "Mario Perez" .
+
+"Ministerio del Trabajo" a xsd:string ;
+    owl:sameAs "Ministerio del Trabajo" .
+
+"Multa grave por reincidencia" a xsd:string ;
+    owl:sameAs "Multa grave por reincidencia" .
+
+"Multa leve por incumplimiento" a xsd:string ;
+    owl:sameAs "Multa leve por incumplimiento" .
+
+"OIT-155" a xsd:string ;
+    owl:sameAs "OIT-155" .
+
+"OIT-187" a xsd:string ;
+    owl:sameAs "OIT-187" .
+
+"Otorgar descansos y vacaciones" a xsd:string ;
+    owl:sameAs "Otorgar descansos y vacaciones" .
+
+"Pagar salario oportunamente" a xsd:string ;
+    owl:sameAs "Pagar salario oportunamente" .
+
+"Prevenir riesgos laborales" a xsd:string ;
+    owl:sameAs "Prevenir riesgos laborales" .
+
+"Servicios Beta S.A.S" a xsd:string ;
+    owl:sameAs "Servicios Beta S.A.S" .
+
+"Superintendencia del Subsidio Familiar" a xsd:string ;
+    owl:sameAs "Superintendencia del Subsidio Familiar" .
+
+"Suspension temporal de actividad" a xsd:string ;
+    owl:sameAs "Suspension temporal de actividad" .
+
+"Tecnologia Delta S.A.S" a xsd:string ;
+    owl:sameAs "Tecnologia Delta S.A.S" .
+
+"Actor Laboral"@es owl:sameAs "Actor Laboral"@es .
+
+"Autoridad Laboral"@es owl:sameAs "Autoridad Laboral"@es .
+
+"Contrato Laboral"@es owl:sameAs "Contrato Laboral"@es .
+
+"Derecho Laboral"@es owl:sameAs "Derecho Laboral"@es .
+
+"Empleador"@es owl:sameAs "Empleador"@es .
+
+"Ley Laboral"@es owl:sameAs "Ley Laboral"@es .
+
+"Norma Juridica"@es owl:sameAs "Norma Juridica"@es .
+
+"Obligacion Laboral"@es owl:sameAs "Obligacion Laboral"@es .
+
+"Ontologia OWL del Dominio Laboral Colombiano"@es owl:sameAs "Ontologia OWL del Dominio Laboral Colombiano"@es .
+
+"Ontologia para Knowledge Graph RAG en normativa laboral, construida para la PARTE C de Practica2."@es owl:sameAs "Ontologia para Knowledge Graph RAG en normativa laboral, construida para la PARTE C de Practica2."@es .
+
+"Sancion Laboral"@es owl:sameAs "Sancion Laboral"@es .
+
+"Trabajador"@es owl:sameAs "Trabajador"@es .
+
+ex:beneficiaA a owl:ObjectProperty ;
+    rdfs:domain ex:DerechoLaboral,
+        owl:Thing ;
+    rdfs:range _:n868c7951d83b4370b132d50a8e3333b2b1,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:beneficiaA ;
+    owl:equivalentProperty ex:beneficiaA ;
+    owl:sameAs ex:beneficiaA .
+
+ex:derecho_descanso a ex:DerechoLaboral,
+        owl:Thing ;
+    ex:esOtorgadoPor ex:ley_2088_2021,
+        ex:ley_50_1990 ;
+    ex:tieneNombre "Derecho al descanso" ;
+    owl:sameAs ex:derecho_descanso .
+
+ex:empleador_alfa a _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Empleador,
+        owl:Thing ;
+    ex:tieneNombre "Industria Alfa S.A.S" ;
+    owl:sameAs ex:empleador_alfa .
+
+ex:empleador_beta a _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Empleador,
+        owl:Thing ;
+    ex:tieneNombre "Servicios Beta S.A.S" ;
+    owl:sameAs ex:empleador_beta .
+
+ex:empleador_delta a _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Empleador,
+        owl:Thing ;
+    ex:tieneNombre "Tecnologia Delta S.A.S" ;
+    owl:sameAs ex:empleador_delta .
+
+ex:empleador_gamma a _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Empleador,
+        owl:Thing ;
+    ex:tieneNombre "Logistica Gamma S.A.S" ;
+    owl:sameAs ex:empleador_gamma .
+
+ex:estableceSancion a owl:ObjectProperty ;
+    rdfs:domain ex:NormaJuridica,
+        owl:Thing ;
+    rdfs:range ex:SancionLaboral,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:estableceSancion ;
+    owl:equivalentProperty ex:estableceSancion ;
+    owl:sameAs ex:estableceSancion .
+
+ex:fechaInicioContrato a owl:DatatypeProperty ;
+    rdfs:domain _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    rdfs:range xsd:date ;
+    rdfs:subPropertyOf ex:fechaInicioContrato ;
+    owl:equivalentProperty ex:fechaInicioContrato ;
+    owl:sameAs ex:fechaInicioContrato .
+
+ex:horasSemanales a owl:DatatypeProperty ;
+    rdfs:domain _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    rdfs:range xsd:integer ;
+    rdfs:subPropertyOf ex:horasSemanales ;
+    owl:equivalentProperty ex:horasSemanales ;
+    owl:sameAs ex:horasSemanales .
+
+ex:imponeSancionA a owl:ObjectProperty ;
+    rdfs:domain ex:ActorLaboral,
+        ex:AutoridadLaboral,
+        ex:SancionLaboral,
+        owl:Thing ;
+    rdfs:range ex:ActorLaboral,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:afectaAActor,
+        ex:imponeSancionA ;
+    owl:equivalentProperty ex:imponeSancionA ;
+    owl:sameAs ex:imponeSancionA .
+
+ex:ley_50_1990 a _:n868c7951d83b4370b132d50a8e3333b2b4,
+        ex:LeyLaboral,
+        ex:NormaJuridica,
+        owl:Thing ;
+    ex:imponeObligacion ex:obligacion_pago_salario ;
+    ex:otorgaDerecho ex:derecho_descanso,
+        ex:derecho_salario_justo ;
+    ex:tieneAnioPublicacion "1990"^^xsd:gYear ;
+    ex:tieneNombre "Ley 50 de 1990" ;
+    ex:tieneNumeroNorma "50" ;
+    owl:sameAs ex:ley_50_1990 .
+
+ex:otorgaDerecho a owl:ObjectProperty ;
+    rdfs:domain ex:NormaJuridica,
+        owl:Thing ;
+    rdfs:range ex:DerechoLaboral,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:otorgaDerecho ;
+    owl:equivalentProperty ex:otorgaDerecho ;
+    owl:inverseOf ex:esOtorgadoPor ;
+    owl:sameAs ex:otorgaDerecho .
+
+ex:salarioMensual a owl:DatatypeProperty ;
+    rdfs:domain _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    rdfs:range xsd:decimal ;
+    rdfs:subPropertyOf ex:salarioMensual ;
+    owl:equivalentProperty ex:salarioMensual ;
+    owl:sameAs ex:salarioMensual .
+
+ex:supervisaCumplimiento a owl:ObjectProperty ;
+    rdfs:domain ex:ActorLaboral,
+        ex:AutoridadLaboral,
+        owl:Thing ;
+    rdfs:range ex:ObligacionLaboral,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:supervisaCumplimiento ;
+    owl:equivalentProperty ex:supervisaCumplimiento ;
+    owl:sameAs ex:supervisaCumplimiento .
+
+ex:tieneAnioPublicacion a owl:DatatypeProperty ;
+    rdfs:domain ex:NormaJuridica,
+        owl:Thing ;
+    rdfs:range xsd:gYear ;
+    rdfs:subPropertyOf ex:tieneAnioPublicacion ;
+    owl:equivalentProperty ex:tieneAnioPublicacion ;
+    owl:sameAs ex:tieneAnioPublicacion .
+
+ex:tieneDescripcion a owl:DatatypeProperty ;
+    rdfs:domain owl:Thing ;
+    rdfs:range xsd:string ;
+    rdfs:subPropertyOf ex:tieneDescripcion ;
+    owl:equivalentProperty ex:tieneDescripcion ;
+    owl:sameAs ex:tieneDescripcion .
+
+ex:tieneNombre a owl:DatatypeProperty ;
+    rdfs:domain owl:Thing ;
+    rdfs:range xsd:string ;
+    rdfs:subPropertyOf ex:tieneNombre ;
+    owl:equivalentProperty ex:tieneNombre ;
+    owl:sameAs ex:tieneNombre .
+
+ex:tieneNumeroNorma a owl:DatatypeProperty ;
+    rdfs:domain ex:NormaJuridica,
+        owl:Thing ;
+    rdfs:range xsd:string ;
+    rdfs:subPropertyOf ex:tieneNumeroNorma ;
+    owl:equivalentProperty ex:tieneNumeroNorma ;
+    owl:sameAs ex:tieneNumeroNorma .
+
+ex:tieneTrabajador a owl:ObjectProperty ;
+    rdfs:domain _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    rdfs:range _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Trabajador,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:tieneRelacionConActor,
+        ex:tieneTrabajador ;
+    owl:equivalentProperty ex:tieneTrabajador ;
+    owl:inverseOf ex:participaEnContrato ;
+    owl:sameAs ex:tieneTrabajador .
+
+ex:trabajador_ana a _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Trabajador,
+        owl:Thing ;
+    ex:participaEnContrato ex:contrato_001 ;
+    ex:tieneNombre "Ana Ruiz" ;
+    owl:sameAs ex:trabajador_ana .
+
+ex:trabajador_carlos a _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Trabajador,
+        owl:Thing ;
+    ex:participaEnContrato ex:contrato_002 ;
+    ex:tieneNombre "Carlos Mejia" ;
+    owl:sameAs ex:trabajador_carlos .
+
+ex:trabajador_luisa a _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Trabajador,
+        owl:Thing ;
+    ex:participaEnContrato ex:contrato_003 ;
+    ex:tieneNombre "Luisa Gomez" ;
+    owl:sameAs ex:trabajador_luisa .
+
+ex:trabajador_mario a _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Trabajador,
+        owl:Thing ;
+    ex:participaEnContrato ex:contrato_004 ;
+    ex:tieneNombre "Mario Perez" ;
+    owl:sameAs ex:trabajador_mario .
+
+owl:Nothing a owl:Class ;
+    rdfs:subClassOf _:n868c7951d83b4370b132d50a8e3333b2b1,
+        _:n868c7951d83b4370b132d50a8e3333b2b4,
+        _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ActorLaboral,
+        ex:AutoridadLaboral,
+        ex:ContratoLaboral,
+        ex:DerechoLaboral,
+        ex:Empleador,
+        ex:LeyLaboral,
+        ex:NormaJuridica,
+        ex:ObligacionLaboral,
+        ex:SancionLaboral,
+        ex:Trabajador,
+        owl:Nothing,
+        owl:Thing ;
+    owl:equivalentClass owl:Nothing ;
+    owl:sameAs owl:Nothing .
+
+"2021"^^xsd:gYear a xsd:gYear ;
+    owl:sameAs "2021"^^xsd:gYear .
+
+ex:afectaAActor a owl:ObjectProperty ;
+    rdfs:domain ex:SancionLaboral,
+        owl:Thing ;
+    rdfs:range ex:ActorLaboral,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:afectaAActor ;
+    owl:equivalentProperty ex:afectaAActor ;
+    owl:sameAs ex:afectaAActor .
+
+ex:esOtorgadoPor a owl:ObjectProperty ;
+    rdfs:domain ex:DerechoLaboral,
+        owl:Thing ;
+    rdfs:range ex:NormaJuridica,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:esOtorgadoPor ;
+    owl:equivalentProperty ex:esOtorgadoPor ;
+    owl:sameAs ex:esOtorgadoPor .
+
+ex:imponeObligacion a owl:ObjectProperty ;
+    rdfs:domain ex:NormaJuridica,
+        owl:Thing ;
+    rdfs:range ex:ObligacionLaboral,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:imponeObligacion ;
+    owl:equivalentProperty ex:imponeObligacion ;
+    owl:sameAs ex:imponeObligacion .
+
+ex:participaEnContrato a owl:ObjectProperty ;
+    rdfs:domain _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Trabajador,
+        owl:Thing ;
+    rdfs:range _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:participaEnContrato ;
+    owl:equivalentProperty ex:participaEnContrato ;
+    owl:sameAs ex:participaEnContrato .
+
+ex:tieneEmpleador a owl:ObjectProperty ;
+    rdfs:domain _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    rdfs:range _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Empleador,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:tieneEmpleador,
+        ex:tieneRelacionConActor ;
+    owl:equivalentProperty ex:tieneEmpleador ;
+    owl:sameAs ex:tieneEmpleador .
+
+owl:Restriction owl:sameAs owl:Restriction .
+
+ex:tieneRelacionConActor a owl:ObjectProperty ;
+    rdfs:domain _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    rdfs:range ex:ActorLaboral,
+        owl:Thing ;
+    rdfs:subPropertyOf ex:tieneRelacionConActor ;
+    owl:equivalentProperty ex:tieneRelacionConActor ;
+    owl:sameAs ex:tieneRelacionConActor .
+
+xsd:date a rdfs:Datatype ;
+    owl:sameAs xsd:date .
+
+xsd:integer a rdfs:Datatype ;
+    owl:sameAs xsd:integer .
+
+ex:LeyLaboral a owl:Class ;
+    rdfs:label "Ley Laboral"@es ;
+    rdfs:subClassOf _:n868c7951d83b4370b132d50a8e3333b2b4,
+        ex:LeyLaboral,
+        ex:NormaJuridica,
+        owl:Thing ;
+    owl:equivalentClass ex:LeyLaboral ;
+    owl:sameAs ex:LeyLaboral .
+
+owl:DatatypeProperty owl:sameAs owl:DatatypeProperty .
+
+xsd:gYear owl:sameAs xsd:gYear .
+
+ex:AutoridadLaboral a owl:Class ;
+    rdfs:label "Autoridad Laboral"@es ;
+    rdfs:subClassOf ex:ActorLaboral,
+        ex:AutoridadLaboral,
+        owl:Thing ;
+    owl:equivalentClass ex:AutoridadLaboral ;
+    owl:sameAs ex:AutoridadLaboral .
+
+owl:AnnotationProperty owl:sameAs owl:AnnotationProperty .
+
+ex:DerechoLaboral a owl:Class ;
+    rdfs:label "Derecho Laboral"@es ;
+    rdfs:subClassOf ex:DerechoLaboral,
+        owl:Thing ;
+    owl:disjointWith ex:ObligacionLaboral ;
+    owl:equivalentClass ex:DerechoLaboral ;
+    owl:sameAs ex:DerechoLaboral .
+
+ex:Empleador a owl:Class ;
+    rdfs:label "Empleador"@es ;
+    rdfs:subClassOf _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Empleador,
+        owl:Thing ;
+    owl:equivalentClass ex:Empleador ;
+    owl:sameAs ex:Empleador .
+
+ex:SancionLaboral a owl:Class ;
+    rdfs:label "Sancion Laboral"@es ;
+    rdfs:subClassOf ex:SancionLaboral,
+        owl:Thing ;
+    owl:equivalentClass ex:SancionLaboral ;
+    owl:sameAs ex:SancionLaboral .
+
+ex:Trabajador a owl:Class ;
+    rdfs:label "Trabajador"@es ;
+    rdfs:subClassOf _:n868c7951d83b4370b132d50a8e3333b2b1,
+        ex:ActorLaboral,
+        ex:Trabajador,
+        owl:Thing ;
+    owl:disjointWith ex:Empleador ;
+    owl:equivalentClass ex:Trabajador ;
+    owl:sameAs ex:Trabajador .
+
+xsd:decimal a rdfs:Datatype ;
+    owl:sameAs xsd:decimal .
+
+ex:ObligacionLaboral a owl:Class ;
+    rdfs:label "Obligacion Laboral"@es ;
+    rdfs:subClassOf ex:ObligacionLaboral,
+        owl:Thing ;
+    owl:equivalentClass ex:ObligacionLaboral ;
+    owl:sameAs ex:ObligacionLaboral .
+
+owl:ObjectProperty owl:sameAs owl:ObjectProperty .
+
+owl:Class owl:sameAs owl:Class .
+
+ex:ContratoLaboral a owl:Class ;
+    rdfs:label "Contrato Laboral"@es ;
+    rdfs:subClassOf _:n868c7951d83b4370b132d50a8e3333b2b5,
+        _:n868c7951d83b4370b132d50a8e3333b2b6,
+        ex:ContratoLaboral,
+        owl:Thing ;
+    owl:equivalentClass ex:ContratoLaboral ;
+    owl:sameAs ex:ContratoLaboral .
+
+ex:NormaJuridica a owl:Class ;
+    rdfs:label "Norma Juridica"@es ;
+    rdfs:subClassOf ex:NormaJuridica,
+        owl:Thing ;
+    owl:equivalentClass ex:NormaJuridica ;
+    owl:sameAs ex:NormaJuridica .
+
+ex:ActorLaboral a owl:Class ;
+    rdfs:label "Actor Laboral"@es ;
+    rdfs:subClassOf ex:ActorLaboral,
+        owl:Thing ;
+    owl:equivalentClass ex:ActorLaboral ;
+    owl:sameAs ex:ActorLaboral .
+
+rdfs:Datatype owl:sameAs rdfs:Datatype .
+
+xsd:string a rdfs:Datatype ;
+    owl:sameAs xsd:string .
+
+owl:Thing a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    owl:equivalentClass owl:Thing ;
+    owl:sameAs owl:Thing .
+
+_:n868c7951d83b4370b132d50a8e3333b2b2 rdf:first ex:Trabajador ;
+    rdf:rest _:n868c7951d83b4370b132d50a8e3333b2b3 ;
+    owl:sameAs _:n868c7951d83b4370b132d50a8e3333b2b2 .
+
+_:n868c7951d83b4370b132d50a8e3333b2b3 rdf:first ex:Empleador ;
+    rdf:rest () ;
+    owl:sameAs _:n868c7951d83b4370b132d50a8e3333b2b3 .
+
+_:n868c7951d83b4370b132d50a8e3333b2b4 a owl:Restriction ;
+    rdfs:subClassOf _:n868c7951d83b4370b132d50a8e3333b2b4 ;
+    owl:equivalentClass _:n868c7951d83b4370b132d50a8e3333b2b4 ;
+    owl:onProperty ex:imponeObligacion ;
+    owl:sameAs _:n868c7951d83b4370b132d50a8e3333b2b4 ;
+    owl:someValuesFrom ex:ObligacionLaboral .
+
+_:n868c7951d83b4370b132d50a8e3333b2b5 a owl:Restriction ;
+    owl:cardinality "1"^^xsd:nonNegativeInteger ;
+    owl:onProperty ex:tieneEmpleador ;
+    owl:sameAs _:n868c7951d83b4370b132d50a8e3333b2b5 .
+
+_:n868c7951d83b4370b132d50a8e3333b2b6 a owl:Restriction ;
+    rdfs:subClassOf _:n868c7951d83b4370b132d50a8e3333b2b6 ;
+    owl:allValuesFrom ex:ActorLaboral ;
+    owl:equivalentClass _:n868c7951d83b4370b132d50a8e3333b2b6 ;
+    owl:onProperty ex:tieneRelacionConActor ;
+    owl:sameAs _:n868c7951d83b4370b132d50a8e3333b2b6 .
+
+_:n868c7951d83b4370b132d50a8e3333b2b1 a owl:Class ;
+    rdfs:subClassOf _:n868c7951d83b4370b132d50a8e3333b2b1,
+        owl:Thing ;
+    owl:equivalentClass _:n868c7951d83b4370b132d50a8e3333b2b1 ;
+    owl:sameAs _:n868c7951d83b4370b132d50a8e3333b2b1 ;
+    owl:unionOf _:n868c7951d83b4370b132d50a8e3333b2b2 .
+

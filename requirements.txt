@@ -16,3 +16,5 @@ langchain-huggingface
 langchain-chroma
 pypdf
 unstructured[pdf]
+rdflib
+owlrl
