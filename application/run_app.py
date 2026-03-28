@@ -1,9 +1,13 @@
 """Script para iniciar la aplicación Streamlit de manera fácil."""
 import subprocess
 import sys
+from pathlib import Path
 
-# Lanzador equivalente a "streamlit run app.py --server.port=8501 --server.headless=true".
-# Toda la carga del RAG ocurre dentro de app.py.
+# Lanzador equivalente a "streamlit run application/app.py --server.port=8501 --server.headless=true".
+# Toda la carga del RAG ocurre dentro de application/app.py.
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+APP_PATH = REPO_ROOT / "application" / "app.py"
 
 if __name__ == "__main__":
     print("=" * 70)
@@ -20,10 +24,10 @@ if __name__ == "__main__":
         # Bloqueante: el control no retorna hasta que Streamlit termine.
         subprocess.run([
             sys.executable, "-m", "streamlit", "run", 
-            "app.py",
+            str(APP_PATH),
             "--server.port=8501",
             "--server.headless=true"
-        ])
+        ], cwd=str(REPO_ROOT))
     except KeyboardInterrupt:
         print("\n\n✅ Servidor detenido correctamente")
     except Exception as e:

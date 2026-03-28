@@ -9,6 +9,11 @@ import streamlit as st
 import time
 from typing import Dict, Any
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.config import load_settings
 from src.graph import build_graph
@@ -30,7 +35,7 @@ def check_database():
     # Verificación superficial: comprueba existencia del directorio y que no esté vacío.
     # No valida integridad de la colección ni que haya chunks indexados.
 
-    chroma_dir = Path("./data/chroma")
+    chroma_dir = REPO_ROOT / "data" / "chroma"
     return chroma_dir.exists() and any(chroma_dir.glob("*"))
 
 

@@ -118,7 +118,7 @@ CHROMA_COLLECTION_NAME=normativa_laboral
 python quick_index.py
 
 # O indexación completa (74 PDFs - ~15 minutos)
-python index_pdfs.py
+python scripts/chroma/index_pdfs.py
 ```
 
 ### 7. Probar el Sistema
@@ -134,7 +134,7 @@ python test_tools.py
 python test_rag_graph.py
 
 # Interfaz web con Streamlit
-streamlit run app.py
+streamlit run application/app.py
 ```
 
 ## 📁 Estructura del Proyecto
@@ -149,11 +149,20 @@ Agentic-AI-practice/
 │   └── corpus/             # 74 PDFs de normativa laboral
 ├── data/
 │   └── chroma/             # Base de datos vectorial (generada)
-├── app.py                  # Interfaz Streamlit
-├── index_pdfs.py           # Script de indexación completa
+├── application/
+│   ├── app.py              # Interfaz Streamlit
+│   └── run_app.py          # Lanzador de la app
+├── scripts/
+│   └── chroma/
+│       ├── index_pdfs.py   # Script de indexación completa
+│       ├── clean_chroma.py # Limpieza de ChromaDB
+│       └── check_chroma_simple.py # Verificación de ChromaDB
 ├── quick_index.py          # Script de indexación rápida
 ├── test_*.py               # Scripts de prueba
-├── PRUEBASCODIGO.ipynb     # 📓 Notebook interactivo con pruebas completas
+├── notebooks/
+│   └── tests/
+│       ├── PRUEBASCODIGO.ipynb  # Notebook interactivo con pruebas completas
+│       └── ontologia.ipynb
 ├── requirements.txt        # Dependencias Python
 ├── .env.example            # Plantilla de configuración
 └── README.md               # Este archivo
@@ -206,13 +215,13 @@ print(f"Total prestaciones: ${resultado['total_prestaciones']:,.2f}")
 
 ```bash
 # Opción 1: Usando el script de inicio
-python run_app.py
+python application/run_app.py
 
 # Opción 2: Directamente con streamlit
-streamlit run app.py
+streamlit run application/app.py
 
 # Opción 3: Con configuración personalizada
-streamlit run app.py --server.port 8501
+streamlit run application/app.py --server.port 8501
 ```
 
 La aplicación se abrirá automáticamente en http://localhost:8501
@@ -271,7 +280,7 @@ Usuario → Classify → Tool Calling → Retrieve → Generate → Verify → R
 
 ## 🧪 Testing
 
-> 📓 **Las pruebas interactivas completas están en `PRUEBASCODIGO.ipynb`** - Jupyter Notebook con ejemplos detallados, visualización de resultados y debugging paso a paso.
+> 📓 **Las pruebas interactivas completas están en `notebooks/tests/PRUEBASCODIGO.ipynb`** - Jupyter Notebook con ejemplos detallados, visualización de resultados y debugging paso a paso.
 
 ### Scripts de prueba CLI
 
@@ -296,7 +305,7 @@ python test_rag_graph.py interactive
 
 ```bash
 # Con Jupyter
-jupyter notebook PRUEBASCODIGO.ipynb
+jupyter notebook notebooks/tests/PRUEBASCODIGO.ipynb
 
 # O con VS Code
 # Abre el archivo y ejecuta las celdas manualmente
@@ -397,7 +406,7 @@ Implementacion principal:
 ### Agregar Nuevos Documentos
 
 1. Coloca PDFs en `src/corpus/`
-2. Ejecuta: `python index_pdfs.py`
+2. Ejecuta: `python scripts/chroma/index_pdfs.py`
 3. Los documentos se indexarán automáticamente
 
 ### Cambiar Proveedor de Embeddings
