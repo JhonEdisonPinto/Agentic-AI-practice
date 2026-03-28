@@ -339,6 +339,7 @@ def main():
                         "classification": "",
                         "documents": [],
                         "tool_results": None,
+                        "kg_results": None,
                         "answer": "",
                         "verification": {},
                         "metadata": {}

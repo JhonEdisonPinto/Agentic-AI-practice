@@ -16,6 +16,7 @@ from langchain_core.documents import Document
 from langgraph.graph import END, StateGraph
 
 from src.config import init_embeddings, init_groq_llm, init_verification_llm
+from src.ontology.kg_agent import KGAgent
 from src.tools import ROUTING_TOOLS
 from src.vectorstore import load_chroma_index
 from src.query_transformer import transform_query
@@ -33,6 +34,7 @@ class RAGState(TypedDict):
     transformed_queries: Optional[List[str]]  # Consultas transformadas/generadas
     documents: List[Document]  # Documentos recuperados
     tool_results: Optional[Dict[str, Any]]  # Resultados de tools ejecutadas
+    kg_results: Optional[List[Dict[str, Any]]]  # Resultados estructurados desde GraphDB
     answer: str  # Respuesta generada
     verification: Dict[str, Any]  # Resultados de verificación
     metadata: Dict[str, Any]  # Metadata adicional
@@ -52,7 +54,7 @@ def classify_node(state: RAGState) -> RAGState:
     """
     query = state["query"]
     
-    print(f"\n🔍 CLASIFICANDO: {query}")
+    print(f"\n[CLASSIFY] {query}")
     
     llm = init_groq_llm(temperature=0)
     
@@ -78,10 +80,10 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
         if classification not in valid_classifications:
             classification = "general"
         
-        print(f"   ✓ Clasificación: {classification}")
+        print(f"   [OK] Clasificacion: {classification}")
         
     except Exception as e:
-        print(f"   ⚠️ Error en clasificación (usando clasificación simple): {str(e)[:100]}")
+        print(f"   [WARN] Error en clasificacion (fallback simple): {str(e)[:100]}")
         # Clasificación simple basada en palabras clave
         # Fallback por keywords cuando el LLM principal falla o no está disponible.
         # El orden de los condicionales importa: "calculation" y "resume" se evalúan antes
@@ -99,7 +101,7 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
             classification = "general_laboral"
         else:
             classification = "general"
-        print(f"   ✓ Clasificación (fallback): {classification}")
+        print(f"   [OK] Clasificacion (fallback): {classification}")
     
     state["classification"] = classification
     state["metadata"] = {"classification_method": "groq_llama_3_3_70b_versatile"}
@@ -123,14 +125,14 @@ def query_transform_node(state: RAGState) -> RAGState:
     
     # Saltar transformación para consultas generales
     if classification in ["general"]:
-        print(f"\n✨ TRANSFORMACIÓN DE CONSULTA: OMITIDA (consulta general)")
+        print(f"\n[TRANSFORM] Omitida (consulta general)")
         state["query_type"] = "none"
         state["transformed_queries"] = [query]
         state.setdefault("metadata", {})["query_transform_skipped"] = True
         return state
     
     try:
-        print(f"\n✨ TRANSFORMACIÓN DE CONSULTA")
+        print(f"\n[TRANSFORM] Iniciada")
         
         # Cargar vectorstore para transformación
         persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
@@ -156,11 +158,11 @@ def query_transform_node(state: RAGState) -> RAGState:
         # Guardar metadata de la transformación
         state.setdefault("metadata", {})["query_transform"] = result["metadata"]
         
-        print(f"   ✓ Tipo de transformación: {state['query_type']}")
-        print(f"   ✓ Consultas generadas: {len(state['transformed_queries'])}")
+        print(f"   [OK] Tipo: {state['query_type']}")
+        print(f"   [OK] Consultas: {len(state['transformed_queries'])}")
         
     except Exception as e:
-        print(f"   ⚠️ Error en transformación de consulta: {str(e)[:100]}")
+        print(f"   [WARN] Error en transformacion: {str(e)[:100]}")
         # Fallback: usar consulta original sin transformación
         state["query_type"] = "fallback"
         state["transformed_queries"] = [query]
@@ -285,13 +287,13 @@ Consulta del usuario: "{query}"""
             }
             
             if salary_val is not None:
-                print(f"      ✓ Salario detectado: ${salary_val:,.2f}")
+                print(f"      [OK] Salario: ${salary_val:,.2f}")
             else:
-                print(f"      ℹ️ Salario no detectado — se usará contexto del corpus")
-            print(f"      ✓ Días trabajados: {dias_val}")
-            print(f"      ✓ Años de servicio: {años_val}")
+                print(f"      [INFO] Salario: sera inferido del corpus")
+            print(f"      [OK] Dias: {dias_val}")
+            print(f"      [OK] Anos: {anos_val}")
             if defaults_used:
-                print(f"      ℹ️ Valores por defecto aplicados: {', '.join(defaults_used)}")
+                print(f"      [INFO] Valores por defecto: {', '.join(defaults_used)}")
         
         elif tool_name == "extract_specific_article":
             doc_type = str(params.get("doc_type", "")).upper()
@@ -352,12 +354,12 @@ Consulta del usuario: "{query}"""
         # else: tool_name == "none" → tool_results queda None
     
     except Exception as e:
-        print(f"   ⚠️ Error en ReAct routing: {str(e)[:150]}")
-        print(f"   ⚠️ Usando fallback con patrones de texto")
+        print(f"   [WARN] Error en ReAct: {str(e)[:150]}")
+        print(f"   [WARN] Usando fallback")
         tool_results = _tool_calling_fallback(query, classification)
     
     if tool_results:
-        print(f"   ✓ Herramienta seleccionada: {tool_results.get('tool_used', 'N/A')}")
+        print(f"   [OK] Tool: {tool_results.get('tool_used', 'N/A')}")
     else:
         print("   • No se requieren herramientas especializadas")
     
@@ -546,9 +548,9 @@ def retrieve_node(state: RAGState) -> RAGState:
                         }
                     )
                     documents = [doc]
-                    print(f"      ✓ Artículo {article_number} extraído exitosamente")
+                    print(f"      [OK] Articulo {article_number} extraido")
                 else:
-                    print(f"      ⚠️ Artículo {article_number} no encontrado en {doc_id}")
+                    print(f"      [WARN] Articulo {article_number} no encontrado en {doc_id}")
                     # Para extracción de artículos, si no se encuentra, devolver mensaje
                     # NO hacer búsqueda genérica porque el usuario pidió algo específico
                     # Se crea un Document de error en lugar de hacer búsqueda genérica.
@@ -586,7 +588,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                 # El resultado de la comparación se inyecta de vuelta en state["tool_results"]
                 # para que generate_node pueda construir el prompt con metadatos de ambos documentos.
                 state["tool_results"]["comparison_result"] = comparison_result
-                print(f"      ✓ Comparación completada")
+                print(f"      [OK] Comparacion completada")
                 print(f"         Doc1: {comparison_result['documento1']['fragmentos_encontrados']} fragmentos")
                 print(f"         Doc2: {comparison_result['documento2']['fragmentos_encontrados']} fragmentos")
                 
@@ -618,7 +620,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                     )
                     documents.append(doc)
                 
-                print(f"      ✓ {len(documents)} documentos creados para contexto")
+                print(f"      [OK] {len(documents)} docs creados")
             
             # 3. Ejecutar herramienta search_by_year_range
             elif tool_used == "search_by_year_range":
@@ -636,7 +638,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                     "vectorstore": vectorstore
                 })
                 
-                print(f"      ✓ {len(documents)} documentos encontrados en rango {start_year}-{end_year}")
+                print(f"      [OK] {len(documents)} docs en rango {start_year}-{end_year}")
             
             # 4. Ejecutar herramienta resume_document
             elif tool_used == "resume_document":
@@ -653,7 +655,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                 
                 # Guardar resultado del resumen en tool_results para usarlo en generate
                 state["tool_results"]["resume_result"] = resume_result
-                print(f"      ✓ Contenido del documento recuperado")
+                print(f"      [OK] Contenido recuperado")
                 print(f"         Título: {resume_result.get('titulo', 'Sin título')}")
                 print(f"         Fragmentos encontrados: {resume_result.get('fragmentos_encontrados', 0)}")
                 
@@ -672,7 +674,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                 documents = [doc]
                 
                 if resume_result.get("fragmentos_encontrados", 0) == 0:
-                    print(f"      ⚠️ No se encontraron fragmentos en la base de datos para este documento")
+                    print(f"      [WARN] No hay fragmentos en base de datos")
             
             # 5. Ejecutar herramienta calculate_prestaciones_sociales
             elif tool_used == "calculate_prestaciones_sociales":
@@ -691,7 +693,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                             "años_servicio": float(años_val)
                         })
                         state["tool_results"]["calculation_result"] = calc_result
-                        print(f"      ✓ Cálculo realizado exitosamente")
+                        print(f"      [OK] Calculo exitoso")
                         print(f"         Cesantías: ${calc_result.get('cesantias', 0):,.2f}")
                         print(f"         Prima: ${calc_result.get('prima_servicios', 0):,.2f}")
                         print(f"         Vacaciones: ${calc_result.get('vacaciones', 0):,.2f}")
@@ -725,9 +727,9 @@ def retrieve_node(state: RAGState) -> RAGState:
                         )
                         documents = [doc]
                     except Exception as calc_error:
-                        print(f"      ⚠️ Error en cálculo: {calc_error}")
+                        print(f"      [WARN] Error en calculo: {calc_error}")
                 else:
-                    print(f"      ℹ️ Salario no disponible — se usará contexto del corpus para responder")
+                    print(f"      [INFO] Salario no disponible - usara corpus")
             
             # 6. Herramienta search_by_document_type - mantener búsqueda por metadata
             elif tool_used == "search_by_document_type":
@@ -760,7 +762,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                             ]
                         }
                 except Exception as filter_error:
-                    print(f"      ⚠️ Error construyendo filtros: {filter_error}")
+                    print(f"      [WARN] Error en filtros: {filter_error}")
                     filter_dict = None
         
         # EJECUTAR BÚSQUEDA si no se obtuvieron documentos de herramientas
@@ -783,7 +785,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                             doc_type = tool_results.get("doc_type")
                             doc_number = tool_results.get("doc_number")
                             
-                            print(f"      ⚠️ Estrategia 2: Buscando solo por tipo y número")
+                            print(f"      [WARN] Estrategia 2: Buscando por tipo")
                             filter_dict = {
                                 "$and": [
                                     {"tipo_documento": {"$eq": doc_type}},
@@ -796,7 +798,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                             
                             # Estrategia 3: Si aún no encontramos, buscar por tipo solamente
                             if not docs_with_scores:
-                                print(f"      ⚠️ Estrategia 3: Buscando solo por tipo: {doc_type}")
+                                print(f"      [WARN] Estrategia 3: Buscando por tipo: {doc_type}")
                                 filter_dict = {"tipo_documento": {"$eq": doc_type}}
                                 docs_with_scores = vectorstore.similarity_search_with_score(
                                     query, k=k*2, filter=filter_dict
@@ -809,7 +811,7 @@ def retrieve_node(state: RAGState) -> RAGState:
                 scores = [score for doc, score in docs_with_scores]
                 
             except Exception as search_error:
-                print(f"      ⚠️ Error en búsqueda con filtros: {search_error}")
+                print(f"      [WARN] Error en busqueda: {search_error}")
                 # Fallback final: búsqueda sin filtros
                 docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
                 documents = [doc for doc, score in docs_with_scores]
@@ -822,7 +824,7 @@ def retrieve_node(state: RAGState) -> RAGState:
             scores = [0.0] * len(documents)  # No hay scores si vienen de herramienta
         
         # LOGGING Y ACTUALIZACIÓN DEL ESTADO
-        print(f"   ✓ {len(documents)} documentos recuperados")
+        print(f"   [OK] {len(documents)} docs recuperados")
         for i, (doc, score) in enumerate(zip(documents, scores), 1):
             doc_id = doc.metadata.get("id_documento", "N/A")
             tipo = doc.metadata.get("tipo_documento", "N/A")
@@ -839,12 +841,60 @@ def retrieve_node(state: RAGState) -> RAGState:
             state["metadata"]["tool_executed"] = tool_results.get("tool_used")
         
     except Exception as e:
-        print(f"   ⚠️ Error en recuperación: {e}")
+        print(f"   [WARN] Error en recuperacion: {e}")
         import traceback
         traceback.print_exc()
         state["documents"] = []
         state["metadata"]["retrieval_error"] = str(e)
     
+    return state
+
+
+def kg_retrieve_node(state: RAGState) -> RAGState:
+    """
+    Recupera contexto estructurado desde GraphDB usando un agente KG.
+
+    Este nodo no reemplaza la recuperacion semantica de ChromaDB.
+    Su objetivo es enriquecer el contexto con hechos RDF/SPARQL.
+    """
+    query = state["query"]
+    classification = state.get("classification", "general")
+
+    # Para consultas generales no laborales evitamos consultas al KG.
+    if classification == "general":
+        state.setdefault("metadata", {})["kg_skipped"] = True
+        return state
+
+    print(f"\n[KG] Recuperando contexto estructurado (GraphDB)")
+
+    try:
+        kg_agent = KGAgent()
+        kg_payload = kg_agent.retrieve(query)
+
+        state["kg_results"] = kg_payload.get("rows", [])
+
+        # Convertir filas RDF en Document para reutilizar generate_node actual.
+        kg_docs = kg_agent.as_documents(query)
+
+        # Unir resultados: primero KG y luego semantico para priorizar hechos.
+        existing_docs = state.get("documents", [])
+        state["documents"] = kg_docs + existing_docs
+
+        md = state.setdefault("metadata", {})
+        md["kg_enabled"] = kg_payload.get("enabled", False)
+        md["kg_rows"] = len(kg_payload.get("rows", []))
+        md["kg_error"] = kg_payload.get("error")
+        md["kg_query_used"] = kg_payload.get("sparql")
+
+        if kg_payload.get("error"):
+            print(f"   [WARN] Error KG: {kg_payload['error']}")
+        else:
+            print(f"   [OK] Filas KG: {len(kg_payload.get('rows', []))}")
+
+    except Exception as e:
+        print(f"   [WARN] Error en KG: {e}")
+        state.setdefault("metadata", {})["kg_error"] = str(e)
+
     return state
 
 
@@ -856,11 +906,11 @@ def generate_node(state: RAGState) -> RAGState:
     documents = state.get("documents", [])
     classification = state.get("classification", "general")
     
-    print(f"\n✍️  GENERANDO RESPUESTA")
+    print(f"\n[GEN] Generando respuesta")
     
     if not documents and classification != "general":
         state["answer"] = "Lo siento, no encontré información relevante para responder tu consulta."
-        print("   ⚠️ No hay documentos para generar respuesta")
+        print("   [WARN] Sin documentos para generar")
         return state
     
     try:
@@ -1173,15 +1223,15 @@ Proporciona una respuesta clara y precisa basada en el contexto:"""
             sources_text += "\n".join(sources_list)
             answer = answer + sources_text
         
-        print(f"   ✓ Respuesta generada ({len(answer)} caracteres)")
-        print(f"   ✓ Fuentes incluidas: {len(sources_list)}")
+        print(f"   [OK] Respuesta generada ({len(answer)} caracteres)")
+        print(f"   [OK] Fuentes: {len(sources_list)}")
         
         state["answer"] = answer
         state["metadata"]["generation_model"] = "groq-llama-3.3-70b-versatile"
         state["metadata"]["sources_count"] = len(sources_list)
         
     except Exception as e:
-        print(f"   ⚠️ Error en generación (usando respuesta basada en documentos): {str(e)[:100]}")
+        print(f"   [WARN] Error en generacion: {str(e)[:100]}")
         # Fallback: crear respuesta simple basada en documentos
         # Si el LLM falla, se extrae el primer chunk directamente de ChromaDB como respuesta cruda.
         # Se mantiene la sección de fuentes para preservar trazabilidad incluso en el caso degradado.
@@ -1251,7 +1301,7 @@ def verify_node(state: RAGState) -> RAGState:
         verification["completeness_score"] = 100
         verification["verification_method"] = "skipped_for_general"
         state["verification"] = verification
-        print("   ✓ Verificación omitida para consulta general")
+        print("   [OK] Verificacion omitida (consulta general)")
         return state
 
     max_retries = 1
@@ -1373,7 +1423,7 @@ Instrucciones para el verificador (NO incluir en la salida):
             else:
                 verification["quality_level"] = "poor"
 
-            print(f"   ✓ Verificación: nivel={verification['quality_level']} score={quality_score:.2%} (intento {attempt})")
+            print(f"   [OK] Verificacion: nivel={verification['quality_level']} score={quality_score:.2%} (intento {attempt})")
 
             # Acción recomendada: regenerar si el verificador lo pide y aún quedan intentos.
             # Decide si regenerar: respetar la recomendación del verificador y permitir regeneración en casos claros.
@@ -1389,7 +1439,7 @@ Instrucciones para el verificador (NO incluir en la salida):
                     should_regenerate = True
 
             if should_regenerate and attempt <= max_retries:
-                print(f"   🔁 Verificador recomienda regenerar (intento {attempt}/{max_retries}). Regenerando respuesta...")
+                print(f"   [RETRY] Regenerando (intento {attempt}/{max_retries})...")
                 # Incrementar contador de regeneraciones en metadata
                 reg_attempts = state.get("metadata", {}).get("regeneration_attempts", 0)
                 state.setdefault("metadata", {})["regeneration_attempts"] = reg_attempts + 1
@@ -1442,6 +1492,7 @@ def build_graph():
     graph.add_node("query_transform", query_transform_node)
     graph.add_node("tool_calling", tool_calling_node)
     graph.add_node("retrieve", retrieve_node)
+    graph.add_node("kg_retrieve", kg_retrieve_node)
     graph.add_node("generate", generate_node)
     graph.add_node("verify", verify_node)
 
@@ -1463,7 +1514,8 @@ def build_graph():
     
     graph.add_edge("query_transform", "tool_calling")
     graph.add_edge("tool_calling", "retrieve")
-    graph.add_edge("retrieve", "generate")
+    graph.add_edge("retrieve", "kg_retrieve")
+    graph.add_edge("kg_retrieve", "generate")
     graph.add_edge("generate", "verify")
     graph.add_edge("verify", END)
 

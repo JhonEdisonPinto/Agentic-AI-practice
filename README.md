@@ -304,6 +304,96 @@ jupyter notebook PRUEBASCODIGO.ipynb
 
 ## 📚 Documentación Adicional
 
+## 🕸️ Knowledge Graph con GraphDB (OWL + SPARQL + Inferencia)
+
+El proyecto ahora incluye una capa de Knowledge Graph conectada a GraphDB con RDFLib.
+
+### 1) Configurar GraphDB
+
+1. Levanta GraphDB local (por ejemplo en http://localhost:7200)
+2. Crea un repositorio llamado `ontologia-laboral`
+3. Activa un razonador (recomendado: `rdfsplus-optimized` u `owl-horst-optimized`)
+
+### 2) Variables de entorno
+
+En `.env`:
+
+GRAPHDB_ENABLED=true
+GRAPHDB_BASE_URL=http://localhost:7200
+GRAPHDB_REPOSITORY=ontologia-laboral
+
+Opcional (si tu GraphDB usa autenticacion):
+
+GRAPHDB_USERNAME=admin
+GRAPHDB_PASSWORD=admin
+
+Ejemplo para Graphwise Sandbox (token obligatorio):
+
+GRAPHDB_ENABLED=true
+GRAPHDB_AUTH_MODE=token
+GRAPHDB_BASE_URL=https://TU-SANDBOX.sandbox.graphwise.ai
+GRAPHDB_LOGIN_URL=https://TU-SANDBOX.sandbox.graphwise.ai/rest/login
+GRAPHDB_REPOSITORY=ontologia-laboral
+GRAPHDB_USERNAME=tu_usuario
+GRAPHDB_PASSWORD=tu_password
+
+### 3) Cargar ontologia OWL a GraphDB
+
+Ejecuta:
+
+python graphdb_setup_and_demo.py
+
+Este script sube `grafo_extenso.ttl` al repositorio de GraphDB usando RDFLib + endpoint SPARQL.
+
+Si aparece error de conexion y el endpoint mostrado es localhost, revisa `GRAPHDB_BASE_URL` en `.env`.
+
+### 4) Casos SPARQL implementados (RDFLib + GraphDB)
+
+Se implementan y ejecutan al menos un caso de:
+
+- SELECT
+- FILTER
+- ORDER BY
+- LIMIT
+- UPDATE (2 operandos):
+  - INSERT DATA
+  - DELETE/INSERT WHERE
+
+Archivo principal de casos:
+- `src/ontology/sparql_cases.py`
+
+### 5) Inferencias (5 casos)
+
+Se documentan y ejecutan 5 casos de inferencia con razonador activo en GraphDB:
+
+1. Propiedad inversa (`tieneTrabajador` -> `participaEnContrato`)
+2. Inferencia por rango a `Trabajador`
+3. Inferencia por subpropiedad a `tieneRelacionConActor`
+4. Inferencia por dominio a `NormaJuridica`
+5. Inferencia por rango a `DerechoLaboral`
+
+Documento de evidencia:
+- `plans/GRAPHDB_INFERENCIAS.md`
+
+### 6) Arquitectura KG-RAG integrada al workflow
+
+Se agrego un nodo de agente KG dentro de LangGraph:
+
+Classify -> Query Transform -> Tool Calling -> Retrieve (Chroma) -> KG Retrieve (GraphDB) -> Generate -> Verify
+
+Componentes:
+
+- Vector store: ChromaDB (contexto semantico)
+- Ontologia OWL en GraphDB (contexto estructurado)
+- Consultas SPARQL via RDFLib
+- LLM para generacion de respuesta
+- Agente KG (`src/ontology/kg_agent.py`) integrado al workflow actual
+
+Implementacion principal:
+- `src/graph.py` (nuevo nodo `kg_retrieve`)
+- `src/ontology/graphdb_client.py`
+- `src/ontology/kg_agent.py`
+
 ### Agregar Nuevos Documentos
 
 1. Coloca PDFs en `src/corpus/`
