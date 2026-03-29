@@ -1531,8 +1531,10 @@ Instrucciones para el verificador (NO incluir en la salida):
     # Se ejecutan al final para evaluar la respuesta ya generada y registrar
     # trazabilidad en LangSmith con @traceable dentro del módulo de métricas.
     try:
+        env_generation_metrics_default = os.getenv("GENERATION_METRICS_ENABLED", "false")
+        default_generation_metrics_enabled = env_generation_metrics_default.lower() in ("1", "true", "yes")
         generation_metrics_enabled = state.get("metadata", {}).get(
-            "generation_metrics_enabled", True
+            "generation_metrics_enabled", default_generation_metrics_enabled
         )
         if generation_metrics_enabled and answer.strip():
             contexts_for_eval = [doc.page_content for doc in documents[:10]]
