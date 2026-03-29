@@ -20,7 +20,7 @@ from src.generation_metrics import evaluate_generation_metrics
 from src.ontology.kg_agent import KGAgent
 from src.retrieval_metrics import evaluate_query_at_ks
 from src.tools import ROUTING_TOOLS
-from src.vectorstore import load_chroma_index
+from src.vectorstore import load_chroma_index, retrieval_search_with_optional_scores
 from src.query_transformer import transform_query
 import os
 import re
@@ -517,6 +517,7 @@ def retrieve_node(state: RAGState) -> RAGState:
         k = select_dynamic_k(query, classification, tool_results, min_k=1, max_k=10)
         # El valor se guarda en metadata para trazabilidad desde la UI de Streamlit.
         state.setdefault("metadata", {})["retrieval_k"] = k
+        state.setdefault("metadata", {})["retrieval_strategy"] = os.getenv("RETRIEVAL_STRATEGY", "similarity")
         
         # EJECUTAR HERRAMIENTAS ESPECIALIZADAS
         documents = []
@@ -774,8 +775,11 @@ def retrieve_node(state: RAGState) -> RAGState:
             try:
                 if filter_dict:
                     # Búsqueda con filtros de metadata
-                    docs_with_scores = vectorstore.similarity_search_with_score(
-                        query, k=k, filter=filter_dict
+                    docs_with_scores = retrieval_search_with_optional_scores(
+                        vectorstore=vectorstore,
+                        query=query,
+                        k=k,
+                        filter_dict=filter_dict,
                     )
                     
                     # Si no encontramos con el filtro exacto, intentar estrategias alternativas
@@ -796,20 +800,30 @@ def retrieve_node(state: RAGState) -> RAGState:
                                     {"numero": {"$eq": doc_number}}
                                 ]
                             }
-                            docs_with_scores = vectorstore.similarity_search_with_score(
-                                query, k=k, filter=filter_dict
+                            docs_with_scores = retrieval_search_with_optional_scores(
+                                vectorstore=vectorstore,
+                                query=query,
+                                k=k,
+                                filter_dict=filter_dict,
                             )
                             
                             # Estrategia 3: Si aún no encontramos, buscar por tipo solamente
                             if not docs_with_scores:
                                 print(f"      [WARN] Estrategia 3: Buscando por tipo: {doc_type}")
                                 filter_dict = {"tipo_documento": {"$eq": doc_type}}
-                                docs_with_scores = vectorstore.similarity_search_with_score(
-                                    query, k=k*2, filter=filter_dict
+                                docs_with_scores = retrieval_search_with_optional_scores(
+                                    vectorstore=vectorstore,
+                                    query=query,
+                                    k=k * 2,
+                                    filter_dict=filter_dict,
                                 )
                 else:
                     # Búsqueda por similitud estándar
-                    docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
+                    docs_with_scores = retrieval_search_with_optional_scores(
+                        vectorstore=vectorstore,
+                        query=query,
+                        k=k,
+                    )
                 
                 documents = [doc for doc, score in docs_with_scores]
                 scores = [score for doc, score in docs_with_scores]
@@ -817,7 +831,12 @@ def retrieve_node(state: RAGState) -> RAGState:
             except Exception as search_error:
                 print(f"      [WARN] Error en busqueda: {search_error}")
                 # Fallback final: búsqueda sin filtros
-                docs_with_scores = vectorstore.similarity_search_with_score(query, k=k)
+                docs_with_scores = retrieval_search_with_optional_scores(
+                    vectorstore=vectorstore,
+                    query=query,
+                    k=k,
+                    strategy="similarity",
+                )
                 documents = [doc for doc, score in docs_with_scores]
                 scores = [score for doc, score in docs_with_scores]
         else:
@@ -1159,6 +1178,12 @@ Tema: {comparison.get('tema_comparacion', 'N/A')}
 ---FIN DE FRAGMENTOS---
 
 Pregunta: {query}
+
+INSTRUCCIONES CRÍTICAS:
+1. Compara SIEMPRE ambos documentos usando los fragmentos disponibles arriba.
+2. Si hay al menos un fragmento de cada documento, NO digas que "no se proporcionó texto".
+3. Si un documento tiene pocos fragmentos o evidencia parcial, indícalo como limitación de cobertura, pero compara con lo disponible.
+4. Cita explícitamente qué hallazgos salen del Documento 1 y cuáles del Documento 2.
 
 Responde comparando ambos documentos sobre el tema especificado. Sé conciso pero completo."""
         elif tool_results and tool_results.get("tool_used") == "resume_document":

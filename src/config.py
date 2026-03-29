@@ -33,11 +33,11 @@ def init_groq_llm(temperature: float = 0.2, model: str | None = None):
 
 
 def init_verification_llm(temperature: float = 0):
-    # LLM dedicado a verificación: por defecto usa openai/gpt-oss-120b.
+    # LLM dedicado a verificación: por defecto usa openai/gpt-oss-20b.
     # Puede sobreescribirse con GROQ_VERIFICATION_MODEL.
     return init_groq_llm(
         temperature=temperature,
-        model=os.getenv("GROQ_VERIFICATION_MODEL", "openai/gpt-oss-120b"),
+        model=os.getenv("GROQ_VERIFICATION_MODEL", "openai/gpt-oss-20b"),
     )
 
 # Inicializa el modelo de embeddings según el provider indicado.
