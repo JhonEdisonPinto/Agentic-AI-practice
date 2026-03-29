@@ -16,7 +16,9 @@ from langchain_core.documents import Document
 from langgraph.graph import END, StateGraph
 
 from src.config import init_embeddings, init_groq_llm, init_verification_llm
+from src.generation_metrics import evaluate_generation_metrics
 from src.ontology.kg_agent import KGAgent
+from src.retrieval_metrics import evaluate_query_at_ks
 from src.tools import ROUTING_TOOLS
 from src.vectorstore import load_chroma_index
 from src.query_transformer import transform_query
@@ -104,7 +106,9 @@ Responde SOLO con el nombre de la categoría (sin explicaciones):"""
         print(f"   [OK] Clasificacion (fallback): {classification}")
     
     state["classification"] = classification
-    state["metadata"] = {"classification_method": "groq_llama_3_3_70b_versatile"}
+    # Conserva metadata existente para no perder trazas o ground truth inyectado
+    # desde scripts de evaluacion externos.
+    state.setdefault("metadata", {})["classification_method"] = "groq_llama_3_3_70b_versatile"
     
     return state
 
@@ -839,6 +843,48 @@ def retrieve_node(state: RAGState) -> RAGState:
         state["metadata"]["used_filter"] = filter_dict is not None
         if tool_results:
             state["metadata"]["tool_executed"] = tool_results.get("tool_used")
+
+        # -----------------------------
+        # Métricas de retrieval (opcional)
+        # -----------------------------
+        # Para calcular Recall@k y Precision@k se requiere ground truth por consulta.
+        # Si no se inyecta en metadata, registramos solo los recuperados y omitimos score.
+        retrieved_doc_ids = [
+            doc.metadata.get("id_documento")
+            for doc in documents
+            if doc.metadata.get("id_documento")
+        ]
+        state["metadata"]["retrieved_doc_ids"] = retrieved_doc_ids
+
+        ground_truth_doc_ids = state.get("metadata", {}).get("ground_truth_doc_ids")
+        retrieval_eval_ks = state.get("metadata", {}).get("retrieval_eval_ks", (3, 5, 10))
+
+        if isinstance(ground_truth_doc_ids, list) and ground_truth_doc_ids:
+            try:
+                ks = tuple(int(k_item) for k_item in retrieval_eval_ks)
+                retrieval_metrics = evaluate_query_at_ks(
+                    retrieved_doc_ids=retrieved_doc_ids,
+                    relevant_doc_ids=ground_truth_doc_ids,
+                    ks=ks,
+                )
+                state["metadata"]["retrieval_metrics"] = retrieval_metrics
+                state["metadata"]["retrieval_metrics_enabled"] = True
+
+                print("   [MTR] Retrieval metrics calculadas")
+                for k_item in ks:
+                    k_metrics = retrieval_metrics.get(k_item, {})
+                    rec = k_metrics.get("recall", 0.0)
+                    pre = k_metrics.get("precision", 0.0)
+                    print(f"      k={k_item} -> recall={rec:.3f} precision={pre:.3f}")
+            except Exception as metric_error:
+                state["metadata"]["retrieval_metrics_error"] = str(metric_error)
+                print(f"   [WARN] Error calculando retrieval metrics: {metric_error}")
+        else:
+            state["metadata"]["retrieval_metrics_enabled"] = False
+            state["metadata"]["retrieval_metrics_skipped_reason"] = (
+                "ground_truth_doc_ids no proporcionado"
+            )
+            print("   [MTR] Retrieval metrics omitidas: falta ground truth")
         
     except Exception as e:
         print(f"   [WARN] Error en recuperacion: {e}")
@@ -1478,6 +1524,52 @@ Instrucciones para el verificador (NO incluir en la salida):
             break
 
     state["verification"] = verification
+
+    # -----------------------------
+    # Métricas de generación (LLM-as-a-judge + LangSmith)
+    # -----------------------------
+    # Se ejecutan al final para evaluar la respuesta ya generada y registrar
+    # trazabilidad en LangSmith con @traceable dentro del módulo de métricas.
+    try:
+        generation_metrics_enabled = state.get("metadata", {}).get(
+            "generation_metrics_enabled", True
+        )
+        if generation_metrics_enabled and answer.strip():
+            contexts_for_eval = [doc.page_content for doc in documents[:10]]
+            print("   [MTR] Calculando métricas de generación")
+
+            generation_metrics = evaluate_generation_metrics(
+                query=query,
+                contexts=contexts_for_eval,
+                answer=answer,
+            )
+
+            state.setdefault("metadata", {})["generation_metrics"] = generation_metrics
+            state["verification"]["faithfulness_score"] = generation_metrics[
+                "faithfulness"
+            ]["score"]
+            state["verification"]["answer_relevance_score"] = generation_metrics[
+                "answer_relevance"
+            ]["score"]
+            state["verification"]["generation_average_score"] = generation_metrics[
+                "average_score"
+            ]
+
+            print(
+                "   [MTR] Generación -> "
+                f"faithfulness={generation_metrics['faithfulness']['score']:.3f}, "
+                f"relevance={generation_metrics['answer_relevance']['score']:.3f}"
+            )
+        else:
+            state.setdefault("metadata", {})["generation_metrics_skipped_reason"] = (
+                "deshabilitadas o respuesta vacía"
+            )
+    except Exception as generation_metric_error:
+        state.setdefault("metadata", {})["generation_metrics_error"] = str(
+            generation_metric_error
+        )
+        print(f"   [WARN] Error en métricas de generación: {generation_metric_error}")
+
     return state
 
 
