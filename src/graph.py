@@ -1540,11 +1540,22 @@ Instrucciones para el verificador (NO incluir en la salida):
             contexts_for_eval = [doc.page_content for doc in documents[:10]]
             print("   [MTR] Calculando métricas de generación")
 
-            generation_metrics = evaluate_generation_metrics(
-                query=query,
-                contexts=contexts_for_eval,
-                answer=answer,
-            )
+            # Reutilizar el LLM del verificador si está disponible para evitar
+            # re-inicializar el cliente dentro de evaluate_generation_metrics.
+            verification_llm = state.get("verification", {}).get("llm")
+            if verification_llm is not None:
+                generation_metrics = evaluate_generation_metrics(
+                    query=query,
+                    contexts=contexts_for_eval,
+                    answer=answer,
+                    llm=verification_llm,
+                )
+            else:
+                generation_metrics = evaluate_generation_metrics(
+                    query=query,
+                    contexts=contexts_for_eval,
+                    answer=answer,
+                )
 
             state.setdefault("metadata", {})["generation_metrics"] = generation_metrics
             state["verification"]["faithfulness_score"] = generation_metrics[
