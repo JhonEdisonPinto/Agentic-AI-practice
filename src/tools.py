@@ -509,7 +509,16 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore: Any =
         # Combinar variantes
         query_variants.extend([f"{doc_type} {doc_number} {v}".strip() for v in theme_variants])
         query_variants.extend(theme_variants)
-        query_variants = [q for q in query_variants if q]  # Remover vacías
+        # Remover variantes vacías y deduplicar preservando el orden
+        query_variants = [q for q in query_variants if q]
+        seen_queries = set()
+        dedup_query_variants: List[str] = []
+        for q in query_variants:
+            if q in seen_queries:
+                continue
+            seen_queries.add(q)
+            dedup_query_variants.append(q)
+        query_variants = dedup_query_variants
         
         # Estrategia 1: Búsqueda con ID exacto
         for qv in query_variants:
