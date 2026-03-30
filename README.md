@@ -264,9 +264,9 @@ Usuario → Classify → Tool Calling → Retrieve → Generate → Verify → R
 | **Orquestación** | LangGraph | Pipeline de 5 nodos |
 | **Vector DB** | ChromaDB | Almacenamiento y búsqueda |
 | **Embeddings** | Sentence Transformers | Modelo multilingüe local |
-| **LLM Clasificación** | Groq (openai/gpt-oss-20b) | Clasificar consultas |
-| **LLM Generación** | Groq (openai/gpt-oss-120b) | Generar respuestas |
-| **LLM Verificación** | Groq (openai/gpt-oss-120b) | Validar calidad |
+| **LLM Clasificación** | Groq (por defecto: llama-3.3-70b-versatile, configurable vía `GROQ_MODEL`) | Clasificar consultas |
+| **LLM Generación** | Groq (por defecto: llama-3.3-70b-versatile, configurable vía `GROQ_MODEL`) | Generar respuestas |
+| **LLM Verificación** | Groq (por defecto: llama-3.3-70b-versatile, configurable vía `GROQ_MODEL`) | Validar calidad |
 | **Framework** | LangChain 1.0+ | Integración de componentes |
 | **UI** | Streamlit | Interfaz web |
 
