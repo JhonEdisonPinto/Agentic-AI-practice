@@ -149,10 +149,13 @@ def display_sidebar():
             help="0 prioriza diversidad, 1 prioriza similitud.",
         )
 
-        # Sincronizar con el runtime para que graph.py/tools.py lean la misma estrategia.
-        os.environ["RETRIEVAL_STRATEGY"] = retrieval_strategy
-        os.environ["MMR_FETCH_K"] = str(int(mmr_fetch_k))
-        os.environ["MMR_LAMBDA_MULT"] = str(float(mmr_lambda_mult))
+        # Sincronizar con el runtime para que graph.py/tools.py lean la misma estrategia
+        # sin usar variables de entorno globales (evita fugas entre sesiones).
+        metadata = st.session_state.get("metadata") or {}
+        metadata["RETRIEVAL_STRATEGY"] = str(retrieval_strategy)
+        metadata["MMR_FETCH_K"] = str(int(mmr_fetch_k))
+        metadata["MMR_LAMBDA_MULT"] = str(float(mmr_lambda_mult))
+        st.session_state["metadata"] = metadata
 
         st.caption(
             f"Estrategia activa: {retrieval_strategy.upper()}"
