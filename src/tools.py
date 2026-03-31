@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Any
 from langchain_core.tools import tool
 from langchain_core.documents import Document
 import re
+import os
 from src.config import init_groq_llm
 
 
@@ -89,6 +90,38 @@ ROUTING_TOOLS = [
     routing_search_by_document_type,
     routing_search_by_year_range,
 ]
+
+
+def _retrieve_docs(
+    vectorstore: Any,
+    query: str,
+    k: int,
+    filter_dict: Optional[Dict[str, Any]] = None,
+) -> List[Document]:
+    """Recupera documentos con Similarity o MMR según RETRIEVAL_STRATEGY."""
+    strategy = os.getenv("RETRIEVAL_STRATEGY", "similarity").strip().lower()
+    mmr_fetch_k = int(os.getenv("MMR_FETCH_K", max(k * 4, 20)))
+    mmr_lambda_mult = float(os.getenv("MMR_LAMBDA_MULT", 0.5))
+
+    if strategy == "mmr":
+        if filter_dict:
+            return vectorstore.max_marginal_relevance_search(
+                query,
+                k=k,
+                fetch_k=mmr_fetch_k,
+                lambda_mult=mmr_lambda_mult,
+                filter=filter_dict,
+            )
+        return vectorstore.max_marginal_relevance_search(
+            query,
+            k=k,
+            fetch_k=mmr_fetch_k,
+            lambda_mult=mmr_lambda_mult,
+        )
+
+    if filter_dict:
+        return vectorstore.similarity_search(query, k=k, filter=filter_dict)
+    return vectorstore.similarity_search(query, k=k)
 
 
 # -----------------------------------------------------------------------------
@@ -429,59 +462,215 @@ def compare_documents(doc_id1: str, doc_id2: str, topic: str, vectorstore: Any =
     MAX_CHARS_PER_FRAGMENT = 800  # Limitar cada fragmento
     
     def search_document(doc_id: str, query: str):
-        """Busca un documento usando estrategias progresivas"""
+        """Busca un documento usando estrategias progresivas y consultas híbridas."""
         results = []
+
+        parts = doc_id.split("_")
+        doc_type = parts[0] if len(parts) >= 1 else ""
+        doc_number = parts[1] if len(parts) >= 2 else ""
+        doc_year = parts[2] if len(parts) >= 3 else ""
+
+        # Usar más de una consulta ayuda cuando el tema (topic) no aparece literal
+        # en todos los fragmentos del documento, pero sí existe contenido útil.
+        # Agregar variantes temáticas para capturar sinónimos y conceptos relacionados
+        query_variants = [
+            query,
+            f"{doc_type} {doc_number} {query}".strip(),
+            f"{doc_type} {doc_number}".strip(),
+            f"{doc_type} {doc_number} {doc_year}".strip(),
+        ]
+        
+        # Agregar variantes semánticas del tema (si es acoso laboral → hostigamiento, conducta hostil, etc)
+        theme_variants = []
+        query_lower = query.lower()
+        if "acoso" in query_lower and "laboral" in query_lower:
+            theme_variants = [
+                "hostigamiento laboral",
+                "conducta hostil trabajo",
+                "maltrato trabajador",
+                "comportamiento abusivo",
+                "victimización laboral"
+            ]
+        elif "jornada" in query_lower or "horario" in query_lower:
+            theme_variants = [
+                "horas de trabajo",
+                "tiempo de labores",
+                "duración jornada",
+                "regimen horario"
+            ]
+        elif "salario" in query_lower or "remuneración" in query_lower:
+            theme_variants = [
+                "pago de salarios",
+                "remuneración trabajador",
+                "prestaciones económicas",
+                "compensación laboral"
+            ]
+        
+        # Combinar variantes
+        query_variants.extend([f"{doc_type} {doc_number} {v}".strip() for v in theme_variants])
+        query_variants.extend(theme_variants)
+        # Remover variantes vacías y deduplicar preservando el orden
+        query_variants = [q for q in query_variants if q]
+        seen_queries = set()
+        dedup_query_variants: List[str] = []
+        for q in query_variants:
+            if q in seen_queries:
+                continue
+            seen_queries.add(q)
+            dedup_query_variants.append(q)
+        query_variants = dedup_query_variants
         
         # Estrategia 1: Búsqueda con ID exacto
-        try:
-            results = vectorstore.similarity_search(
-                query,
-                k=MAX_FRAGMENTS_PER_DOC,  # Usar configuración optimizada
-                filter={"id_documento": {"$eq": doc_id}}
-            )
-        except Exception as e:
-            pass
+        for qv in query_variants:
+            try:
+                partial = _retrieve_docs(
+                    vectorstore=vectorstore,
+                    query=qv,
+                    k=MAX_FRAGMENTS_PER_DOC,
+                    filter_dict={"id_documento": {"$eq": doc_id}},
+                )
+                if partial:
+                    results.extend(partial)
+            except Exception:
+                continue
+
+        if results:
+            dedup = []
+            seen = set()
+            for doc in results:
+                key = doc.page_content
+                if key in seen:
+                    continue
+                seen.add(key)
+                dedup.append(doc)
+                if len(dedup) >= MAX_FRAGMENTS_PER_DOC:
+                    break
+            return dedup
         
         # Estrategia 2: Buscar por tipo y número (sin año)
         if not results:
             try:
-                parts = doc_id.split("_")
                 if len(parts) >= 2:
-                    doc_type = parts[0]
-                    doc_number = parts[1]
-                    
-                    results = vectorstore.similarity_search(
-                        query,
-                        k=MAX_FRAGMENTS_PER_DOC,
-                        filter={
-                            "$and": [
-                                {"tipo_documento": {"$eq": doc_type}},
-                                {"numero": {"$eq": doc_number}}
-                            ]
-                        }
-                    )
-            except Exception as e:
+                    for qv in query_variants:
+                        partial = _retrieve_docs(
+                            vectorstore=vectorstore,
+                            query=qv,
+                            k=MAX_FRAGMENTS_PER_DOC,
+                            filter_dict={
+                                "$and": [
+                                    {"tipo_documento": {"$eq": doc_type}},
+                                    {"numero": {"$eq": doc_number}}
+                                ]
+                            },
+                        )
+                        if partial:
+                            results.extend(partial)
+            except Exception:
                 pass
+
+            if results:
+                dedup = []
+                seen = set()
+                for doc in results:
+                    key = doc.page_content
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    dedup.append(doc)
+                    if len(dedup) >= MAX_FRAGMENTS_PER_DOC:
+                        break
+                return dedup
         
         # Estrategia 3: Búsqueda manual (fallback)
         if not results:
             try:
-                parts = doc_id.split("_")
                 if len(parts) >= 2:
-                    doc_type = parts[0]
-                    doc_number = parts[1]
+                    all_docs = []
+                    for qv in query_variants:
+                        batch = _retrieve_docs(vectorstore=vectorstore, query=qv, k=20)
+                        all_docs.extend(batch)
                     
-                    all_docs = vectorstore.similarity_search(
-                        f"{doc_type.lower()} {doc_number} {query}",
-                        k=20  # Reducido de 100 a 20
-                    )
-                    
+                    # Filtrado case-insensitive para tolerar variaciones en metadata.
                     results = [
                         doc for doc in all_docs
-                        if (doc.metadata.get("tipo_documento", "") == doc_type and
-                            str(doc.metadata.get("numero", "")) == doc_number)
+                        if (
+                            str(doc.metadata.get("tipo_documento", "")).upper() == doc_type.upper()
+                            and str(doc.metadata.get("numero", "")) == str(doc_number)
+                        )
                     ][:MAX_FRAGMENTS_PER_DOC]
-            except Exception as e:
+            except Exception:
+                pass
+        
+        # Estrategia 4: Buscar SOLO por tipo de documento como último recurso
+        # Esto es útil cuando el número o campo de metadata no coincide exactamente
+        if not results:
+            try:
+                if doc_type:
+                    # Buscar con todas las variantes para capturar más candidatos
+                    all_docs = []
+                    for qv in query_variants:
+                        try:
+                            batch = _retrieve_docs(
+                                vectorstore=vectorstore,
+                                query=qv,
+                                k=100  # Aumentar significativamente para tener muchos candidatos
+                            )
+                            all_docs.extend(batch)
+                        except Exception:
+                            continue
+                    
+                    # Filtrar por tipo de documento (case-insensitive)
+                    type_matched = [
+                        doc for doc in all_docs
+                        if str(doc.metadata.get("tipo_documento", "")).upper() == doc_type.upper()
+                    ]
+                    
+                    # Si tenemos documentos del tipo correcto, priorizar por relevancia
+                    if type_matched:
+                        query_lower = query.lower()
+                        query_words = set(w.lower() for w in query.split() if len(w) > 2)
+                        
+                        def score_relevance(doc):
+                            """Puntúa fragmento por coincidencia de palabras clave y variantes temáticas"""
+                            content_lower = doc.page_content.lower()
+                            
+                            # Puntaje base: palabras clave del query
+                            score = sum(1 for word in query_words if word in content_lower)
+                            
+                            # Puntaje adicional por sinónimos/variantes temáticas
+                            theme_synonyms = {
+                                "acoso": ["hostig", "maltrat", "abusiv", "conduct hostil", "intimidac"],
+                                "laboral": ["trabajo", "empleado", "obrero", "jornada"],
+                                "jornada": ["horas", "horario", "tiempo trabajo", "duración"],
+                                "salario": ["pago", "remuneración", "prestación", "compensación", "sueldo"]
+                            }
+                            
+                            for theme, synonyms in theme_synonyms.items():
+                                if theme in query_lower:
+                                    syn_matches = sum(1 for syn in synonyms if syn in content_lower)
+                                    score += syn_matches * 0.5  # Peso menor que coincidencias exactas
+                            
+                            return score
+                        
+                        # Deduplicar y puntuar
+                        seen_content = set()
+                        scored_docs = []
+                        for doc in type_matched:
+                            key = doc.page_content
+                            if key not in seen_content:
+                                seen_content.add(key)
+                                rel_score = score_relevance(doc)
+                                scored_docs.append((doc, rel_score))
+                        
+                        # Ordenar por relevancia (descendente) separando:
+                        # 1. Documentos con alta relevancia (score > 0)
+                        # 2. Documentos sin relevancia directa pero de tipo correcto
+                        high_rel = [d for d, s in scored_docs if s > 0]
+                        low_rel = [d for d, s in scored_docs if s == 0]
+                        
+                        # Combinar: primero los relevantes, luego los demás
+                        results = (high_rel + low_rel)[:MAX_FRAGMENTS_PER_DOC]
+            except Exception:
                 pass
         
         return results
